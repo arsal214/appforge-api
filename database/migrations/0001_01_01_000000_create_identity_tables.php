@@ -1,0 +1,74 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Organisations and users.
+ *
+ * This repo owns every migration in the AppForge estate. `appforge-admin` reads
+ * the same database and must never carry a `database/migrations` directory —
+ * two repos migrating one schema is how you get a production outage nobody can
+ * bisect.
+ *
+ * Keys are prefixed ULIDs stored as char(30), not auto-increment integers.
+ * Sequential ids in a multi-tenant API leak volume (a competitor can read your
+ * customer count off an id) and invite enumeration. ULIDs sort by creation time
+ * like an integer would, so we lose nothing on index locality.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('organizations', function (Blueprint $table) {
+            $table->char('id', 30)->primary();
+            $table->string('name');
+            // Deliberately not unique. It is a display/URL nicety, never a
+            // lookup key — routing uses the ULID. Two customers are allowed to
+            // both be called "Joe's Pizza", and refusing the second signup over
+            // a cosmetic collision would be indefensible.
+            $table->string('slug')->index();
+            $table->timestamps();
+        });
+
+        Schema::create('users', function (Blueprint $table) {
+            $table->char('id', 30)->primary();
+            $table->char('organization_id', 30);
+            $table->string('name');
+            $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->string('password');
+            $table->rememberToken();
+            $table->timestamps();
+
+            $table->foreign('organization_id')
+                ->references('id')->on('organizations')
+                ->cascadeOnDelete();
+        });
+
+        Schema::create('password_reset_tokens', function (Blueprint $table) {
+            $table->string('email')->primary();
+            $table->string('token');
+            $table->timestamp('created_at')->nullable();
+        });
+
+        Schema::create('sessions', function (Blueprint $table) {
+            $table->string('id')->primary();
+            // char(30), not foreignId — users are ULID-keyed.
+            $table->char('user_id', 30)->nullable()->index();
+            $table->string('ip_address', 45)->nullable();
+            $table->text('user_agent')->nullable();
+            $table->longText('payload');
+            $table->integer('last_activity')->index();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('sessions');
+        Schema::dropIfExists('password_reset_tokens');
+        Schema::dropIfExists('users');
+        Schema::dropIfExists('organizations');
+    }
+};

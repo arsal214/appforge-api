@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <!-- MySQL, not sqlite in memory. The tests are here to prove the
+             schema and the tenancy scoping behave, and sqlite silently accepts
+             things MySQL rejects (and enforces foreign keys only if asked).
+             A green suite against a different engine than production is worth
+             very little. Create it once with:
+               CREATE DATABASE appforge_testing
+                 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_DATABASE" value="appforge_testing"/>
+        <env name="DB_URL" value=""/>
+        <!-- A key of its own, so the suite never exercises the key that
+             protects local development data. -->
+        <env name="VAULT_DRIVER" value="local"/>
+        <env name="VAULT_LOCAL_KEY" value="jHwhCzd/qHX0LTkheNMdGLocckmHuz0Ez0HpbeDFei4="/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>
