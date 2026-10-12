@@ -28,6 +28,7 @@ class AppResource extends JsonResource
             'sourceUrl' => $this->source_url,
             'templateId' => $this->template_id,
             'industry' => $this->industry,
+            'category' => $this->category,
             'status' => $this->status,
             'accentColor' => $this->accent_color,
             'publishedVersion' => $this->published_version,

@@ -35,6 +35,7 @@ class AppController extends Controller
             'source_url' => $request->validated('sourceUrl'),
             'template_id' => $template['id'],
             'industry' => $template['industry'],
+            'category' => $request->validated('category'),
             'status' => 'draft',
             'accent_color' => $template['accentColor'],
         ]);

@@ -18,7 +18,7 @@ return [
 
     'paths' => ['api/*'],
 
-    'allowed_methods' => ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    'allowed_methods' => ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 
     'allowed_origins' => array_values(array_filter(
         explode(',', (string) env('FRONTEND_URL', 'http://localhost:3000'))

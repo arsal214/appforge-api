@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AppConfigController;
 use App\Http\Controllers\Api\AppController;
 use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BusinessProfileController;
 use App\Http\Controllers\Api\CredentialController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\EventController;
@@ -13,6 +14,7 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\PublicConfigController;
 use App\Http\Controllers\Api\PushCampaignController;
 use App\Http\Controllers\Api\TemplateController;
+use App\Http\Controllers\Api\UploadController;
 use Illuminate\Support\Facades\Route;
 
 /**
@@ -101,6 +103,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Read-only. Counters are written by phones, never by the panel.
     Route::get('apps/{app}/analytics', [AnalyticsController::class, 'show']);
+
+    Route::middleware('throttle:60,1')
+        ->post('uploads', [UploadController::class, 'store']);
+
+    Route::get('profiles', [BusinessProfileController::class, 'index']);
+    Route::get('profiles/{category}', [BusinessProfileController::class, 'show']);
+    Route::put('profiles/{category}', [BusinessProfileController::class, 'update']);
+    Route::delete('profiles/{category}', [BusinessProfileController::class, 'destroy']);
 
     Route::patch('account', [AccountController::class, 'update']);
     Route::patch('organization', [OrganizationController::class, 'update']);

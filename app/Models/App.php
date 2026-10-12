@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'source_url',
     'template_id',
     'industry',
+    'category',
     'status',
     'accent_color',
 ])]
