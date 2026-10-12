@@ -33,4 +33,9 @@ class Organization extends Model
     {
         return $this->hasMany(App::class);
     }
+
+    public function businessProfiles(): HasMany
+    {
+        return $this->hasMany(BusinessProfile::class);
+    }
 }

@@ -27,7 +27,7 @@ class AppsTest extends TestCase
         // one fails zod at the boundary and blanks the whole panel.
         $this->assertEqualsCanonicalizing([
             'id', 'organizationId', 'name', 'slug', 'sourceUrl', 'templateId',
-            'industry', 'status', 'accentColor', 'publishedVersion',
+            'industry', 'category', 'status', 'accentColor', 'publishedVersion',
             'createdAt', 'updatedAt',
         ], array_keys($data));
 
@@ -36,6 +36,54 @@ class AppsTest extends TestCase
             '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/',
             $data['createdAt'],
         );
+    }
+
+    #[Test]
+    public function an_app_records_the_category_it_was_built_from(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/apps', [
+                'name' => 'Bean There',
+                'templateId' => 'tpl_restaurant',
+                'sourceUrl' => null,
+                'category' => 'cafe',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.category', 'cafe')
+            ->assertJsonPath('data.industry', 'restaurant');
+    }
+
+    #[Test]
+    public function an_app_built_from_a_bare_template_has_no_category(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/apps', [
+                'name' => 'Something New',
+                'templateId' => 'tpl_restaurant',
+                'sourceUrl' => null,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.category', null);
+    }
+
+    #[Test]
+    public function a_category_outside_the_contract_is_refused(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/apps', [
+                'name' => 'Nightclub',
+                'templateId' => 'tpl_restaurant',
+                'sourceUrl' => null,
+                'category' => 'nightclub',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('category');
     }
 
     #[Test]
