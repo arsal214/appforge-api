@@ -447,7 +447,13 @@ class ConfigValidator
             $this->validateTextStyles($style['text'], "{$path}.text");
         }
 
-        foreach (['backgroundColor', 'borderColor', 'accentColor'] as $key) {
+        foreach ([
+            'backgroundColor',
+            'borderColor',
+            'accentColor',
+            'buttonColor',
+            'buttonTextColor',
+        ] as $key) {
             $this->optionalColor($style, $key, $path);
         }
 
