@@ -457,6 +457,12 @@ class ConfigValidator
             $this->optionalColor($style, $key, $path);
         }
 
+        $size = $style['buttonSize'] ?? null;
+        if ($size !== null && ! in_array($size, Contract::vocabulary('buttonSizes'), true)) {
+            $this->add("{$path}.buttonSize", "Expected 'small', 'medium' or 'large'.");
+        }
+
+        $this->optionalWholeNumber($style, 'buttonRadius', $path, 0, Contract::limit('maxCornerRadius'));
         $this->optionalWholeNumber($style, 'borderWidth', $path, 0, Contract::limit('maxBorderWidth'));
         $this->optionalWholeNumber($style, 'cornerRadius', $path, 0, Contract::limit('maxCornerRadius'));
         $this->optionalWholeNumber($style, 'paddingX', $path, 0, Contract::limit('maxPadding'));
@@ -543,6 +549,7 @@ class ConfigValidator
             'loyalty_card' => $this->loyaltyCardProps($props, $path),
             'booking_cta' => $this->bookingCtaProps($props, $path),
             'contact_block' => $this->contactBlockProps($props, $path),
+            'divider' => $this->dividerProps($props, $path),
             default => $this->add($path, 'Unknown section type.'),
         };
     }
@@ -631,6 +638,12 @@ class ConfigValidator
     private function buttonRowProps(array $p, string $path): void
     {
         $this->allowOnly($p, $path, Contract::fields('sectionProps.button_row'));
+
+        $align = $p['align'] ?? null;
+        if ($align !== null && ! in_array($align, Contract::vocabulary('buttonAlignments'), true)) {
+            $this->add("{$path}.align", "Expected 'left', 'center' or 'right'.");
+        }
+
         $buttons = $p['buttons'] ?? null;
 
         if (! is_array($buttons) || ! array_is_list($buttons) || $buttons === []) {
@@ -654,8 +667,38 @@ class ConfigValidator
             }
             $this->allowOnly($button, $buttonPath, Contract::fields('button'));
             $this->requireId($button['id'] ?? null, "{$buttonPath}.id");
-            $this->requireText($button['label'] ?? null, "{$buttonPath}.label", 40);
             $this->validateAction($button['action'] ?? null, "{$buttonPath}.action");
+
+            $icon = $button['icon'] ?? null;
+            if ($icon !== null && ! in_array($icon, Contract::vocabulary('tabIcons'), true)) {
+                $this->add("{$buttonPath}.icon", 'Not an icon we ship.');
+            }
+
+            $position = $button['iconPosition'] ?? null;
+            if ($position !== null && ! in_array($position, Contract::vocabulary('iconPositions'), true)) {
+                $this->add("{$buttonPath}.iconPosition", "Expected 'left' or 'right'.");
+            }
+
+            $size = $button['size'] ?? null;
+            if ($size !== null && ! in_array($size, Contract::vocabulary('buttonSizes'), true)) {
+                $this->add("{$buttonPath}.size", "Expected 'small', 'medium' or 'large'.");
+            }
+
+            if (array_key_exists('fullWidth', $button) && $button['fullWidth'] !== null
+                && ! is_bool($button['fullWidth'])) {
+                $this->add("{$buttonPath}.fullWidth", 'Expected true or false.');
+            }
+
+            $this->optionalWholeNumber(
+                $button, 'radius', $buttonPath, 0, Contract::limit('maxCornerRadius'),
+            );
+
+            $hasLabel = is_string($button['label'] ?? null) && trim($button['label']) !== '';
+            if ($hasLabel) {
+                $this->optionalText($button, 'label', $buttonPath, 40);
+            } elseif ($icon === null) {
+                $this->add("{$buttonPath}.label", 'Give the button a label, an icon, or both.');
+            }
         }
     }
 
@@ -723,6 +766,17 @@ class ConfigValidator
         $this->requireText($p['ctaLabel'] ?? null, "{$path}.ctaLabel", 40);
         $this->validateAction($p['ctaAction'] ?? null, "{$path}.ctaAction");
         $this->validateChips($p['services'] ?? null, "{$path}.services", required: false);
+    }
+
+    /** @param array<string, mixed> $p */
+    private function dividerProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.divider'));
+
+        $variant = $p['variant'] ?? null;
+        if ($variant !== null && ! in_array($variant, Contract::vocabulary('dividerVariants'), true)) {
+            $this->add("{$path}.variant", 'Not a separator we draw.');
+        }
     }
 
     /** @param array<string, mixed> $p */
