@@ -550,6 +550,7 @@ class ConfigValidator
             'booking_cta' => $this->bookingCtaProps($props, $path),
             'contact_block' => $this->contactBlockProps($props, $path),
             'divider' => $this->dividerProps($props, $path),
+            'feature_list' => $this->featureListProps($props, $path),
             default => $this->add($path, 'Unknown section type.'),
         };
     }
@@ -564,6 +565,24 @@ class ConfigValidator
         $this->optionalColor($p, 'backgroundColor', $path);
         $this->optionalText($p, 'ctaLabel', $path, 40);
         $this->optionalAction($p, 'ctaAction', $path);
+        $this->optionalAlignment($p, 'ctaAlign', $path);
+    }
+
+    /**
+     * Where a button sits across the width.
+     *
+     * One rule for the row and for every single call to action, because the
+     * three values mean the same thing in both places and a second copy is a
+     * second chance for the panel and the validator to disagree.
+     *
+     * @param  array<string, mixed>  $bag
+     */
+    private function optionalAlignment(array $bag, string $key, string $path): void
+    {
+        $value = $bag[$key] ?? null;
+        if ($value !== null && ! in_array($value, Contract::vocabulary('buttonAlignments'), true)) {
+            $this->add("{$path}.{$key}", "Expected 'left', 'center' or 'right'.");
+        }
     }
 
     /** @param array<string, mixed> $p */
@@ -603,6 +622,7 @@ class ConfigValidator
         $this->optionalText($p, 'body', $path, Contract::limit('maxText'));
         $this->optionalText($p, 'ctaLabel', $path, 40);
         $this->optionalAction($p, 'ctaAction', $path);
+        $this->optionalAlignment($p, 'ctaAlign', $path);
         $this->optionalColor($p, 'backgroundColor', $path);
     }
 
@@ -639,10 +659,7 @@ class ConfigValidator
     {
         $this->allowOnly($p, $path, Contract::fields('sectionProps.button_row'));
 
-        $align = $p['align'] ?? null;
-        if ($align !== null && ! in_array($align, Contract::vocabulary('buttonAlignments'), true)) {
-            $this->add("{$path}.align", "Expected 'left', 'center' or 'right'.");
-        }
+        $this->optionalAlignment($p, 'align', $path);
 
         $buttons = $p['buttons'] ?? null;
 
@@ -765,10 +782,55 @@ class ConfigValidator
         $this->optionalText($p, 'body', $path, Contract::limit('maxText'));
         $this->requireText($p['ctaLabel'] ?? null, "{$path}.ctaLabel", 40);
         $this->validateAction($p['ctaAction'] ?? null, "{$path}.ctaAction");
+        $this->optionalAlignment($p, 'ctaAlign', $path);
         $this->validateChips($p['services'] ?? null, "{$path}.services", required: false);
     }
 
     /** @param array<string, mixed> $p */
+    private function featureListProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.feature_list'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+
+        $items = $p['items'] ?? null;
+        if (! is_array($items) || ! array_is_list($items)) {
+            $this->add("{$path}.items", 'Expected a list.');
+
+            return;
+        }
+        if ($items === []) {
+            $this->add("{$path}.items", 'Add at least one.');
+
+            return;
+        }
+        if (count($items) > Contract::limit('maxFeatures')) {
+            $this->add("{$path}.items", 'Too many.');
+
+            return;
+        }
+
+        foreach ($items as $index => $item) {
+            $itemPath = "{$path}.items.{$index}";
+            if (! $this->isMap($item)) {
+                $this->add($itemPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($item, $itemPath, Contract::fields('feature'));
+            $this->requireId($item['id'] ?? null, "{$itemPath}.id");
+            $this->requireText($item['label'] ?? null, "{$itemPath}.label", Contract::limit('maxShortText'));
+
+            // The icon is optional, but a named one has to be in the set the
+            // shell ships or the row draws a gap where a glyph should be.
+            if (array_key_exists('icon', $item) && $item['icon'] !== null) {
+                if (! in_array($item['icon'], Contract::vocabulary('tabIcons'), true)) {
+                    $this->add("{$itemPath}.icon", 'Not an icon we ship.');
+                }
+            }
+        }
+    }
+
     private function dividerProps(array $p, string $path): void
     {
         $this->allowOnly($p, $path, Contract::fields('sectionProps.divider'));
