@@ -551,6 +551,10 @@ class ConfigValidator
             'contact_block' => $this->contactBlockProps($props, $path),
             'divider' => $this->dividerProps($props, $path),
             'feature_list' => $this->featureListProps($props, $path),
+            'faq' => $this->faqProps($props, $path),
+            'photo_carousel' => $this->photoCarouselProps($props, $path),
+            'testimonials' => $this->testimonialsProps($props, $path),
+            'team' => $this->teamProps($props, $path),
             default => $this->add($path, 'Unknown section type.'),
         };
     }
@@ -644,12 +648,7 @@ class ConfigValidator
         $this->requireUrl($p['imageUrl'] ?? null, "{$path}.imageUrl");
         $this->optionalText($p, 'caption', $path, Contract::limit('maxShortText'));
 
-        $ratio = $p['aspectRatio'] ?? null;
-        if (! is_int($ratio) && ! is_float($ratio)) {
-            $this->add("{$path}.aspectRatio", 'Expected a number.');
-        } elseif ($ratio <= 0 || $ratio > 10) {
-            $this->add("{$path}.aspectRatio", 'Expected a ratio between 0 and 10.');
-        }
+        $this->requireRatio($p['aspectRatio'] ?? null, "{$path}.aspectRatio");
 
         $this->optionalAction($p, 'action', $path);
     }
@@ -792,20 +791,8 @@ class ConfigValidator
         $this->allowOnly($p, $path, Contract::fields('sectionProps.feature_list'));
         $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
 
-        $items = $p['items'] ?? null;
-        if (! is_array($items) || ! array_is_list($items)) {
-            $this->add("{$path}.items", 'Expected a list.');
-
-            return;
-        }
-        if ($items === []) {
-            $this->add("{$path}.items", 'Add at least one.');
-
-            return;
-        }
-        if (count($items) > Contract::limit('maxFeatures')) {
-            $this->add("{$path}.items", 'Too many.');
-
+        $items = $this->boundedList($p['items'] ?? null, "{$path}.items", Contract::limit('maxFeatures'));
+        if ($items === null) {
             return;
         }
 
@@ -828,6 +815,151 @@ class ConfigValidator
                     $this->add("{$itemPath}.icon", 'Not an icon we ship.');
                 }
             }
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function faqProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.faq'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+
+        $items = $this->boundedList($p['items'] ?? null, "{$path}.items", Contract::limit('maxFaqs'));
+        if ($items === null) {
+            return;
+        }
+
+        foreach ($items as $index => $item) {
+            $itemPath = "{$path}.items.{$index}";
+            if (! $this->isMap($item)) {
+                $this->add($itemPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($item, $itemPath, Contract::fields('faqItem'));
+            $this->requireId($item['id'] ?? null, "{$itemPath}.id");
+            $this->requireText($item['question'] ?? null, "{$itemPath}.question", Contract::limit('maxShortText'));
+            $this->requireText($item['answer'] ?? null, "{$itemPath}.answer", Contract::limit('maxText'));
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function photoCarouselProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.photo_carousel'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+        $this->requireRatio($p['aspectRatio'] ?? null, "{$path}.aspectRatio");
+
+        $photos = $this->boundedList($p['photos'] ?? null, "{$path}.photos", Contract::limit('maxPhotos'));
+        if ($photos === null) {
+            return;
+        }
+
+        foreach ($photos as $index => $photo) {
+            $photoPath = "{$path}.photos.{$index}";
+            if (! $this->isMap($photo)) {
+                $this->add($photoPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($photo, $photoPath, Contract::fields('photo'));
+            $this->requireId($photo['id'] ?? null, "{$photoPath}.id");
+            $this->requireUrl($photo['imageUrl'] ?? null, "{$photoPath}.imageUrl");
+            $this->optionalText($photo, 'caption', $photoPath, Contract::limit('maxShortText'));
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function testimonialsProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.testimonials'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+
+        $items = $this->boundedList($p['items'] ?? null, "{$path}.items", Contract::limit('maxTestimonials'));
+        if ($items === null) {
+            return;
+        }
+
+        foreach ($items as $index => $item) {
+            $itemPath = "{$path}.items.{$index}";
+            if (! $this->isMap($item)) {
+                $this->add($itemPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($item, $itemPath, Contract::fields('testimonial'));
+            $this->requireId($item['id'] ?? null, "{$itemPath}.id");
+            $this->requireText($item['name'] ?? null, "{$itemPath}.name", Contract::limit('maxShortText'));
+            $this->requireText($item['quote'] ?? null, "{$itemPath}.quote", Contract::limit('maxText'));
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function teamProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.team'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+
+        if (array_key_exists('layout', $p) && ! in_array($p['layout'], Contract::vocabulary('peopleLayouts'), true)) {
+            $this->add("{$path}.layout", 'Unknown layout.');
+        }
+
+        $members = $this->boundedList($p['members'] ?? null, "{$path}.members", Contract::limit('maxTeamMembers'));
+        if ($members === null) {
+            return;
+        }
+
+        foreach ($members as $index => $member) {
+            $memberPath = "{$path}.members.{$index}";
+            if (! $this->isMap($member)) {
+                $this->add($memberPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($member, $memberPath, Contract::fields('teamMember'));
+            $this->requireId($member['id'] ?? null, "{$memberPath}.id");
+            $this->requireText($member['name'] ?? null, "{$memberPath}.name", Contract::limit('maxShortText'));
+            $this->optionalText($member, 'role', $memberPath, Contract::limit('maxShortText'));
+            $this->optionalUrl($member, 'imageUrl', $memberPath);
+        }
+    }
+
+    /**
+     * A list of items, bounded, or null once an error has been recorded.
+     *
+     * @return array<int, mixed>|null
+     */
+    private function boundedList(mixed $value, string $path, int $max): ?array
+    {
+        if (! is_array($value) || ! array_is_list($value)) {
+            $this->add($path, 'Expected a list.');
+
+            return null;
+        }
+        if ($value === []) {
+            $this->add($path, 'Add at least one.');
+
+            return null;
+        }
+        if (count($value) > $max) {
+            $this->add($path, 'Too many.');
+
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function requireRatio(mixed $value, string $path): void
+    {
+        if (! is_int($value) && ! is_float($value)) {
+            $this->add($path, 'Expected a number.');
+        } elseif ($value <= 0 || $value > 10) {
+            $this->add($path, 'Expected a ratio between 0 and 10.');
         }
     }
 
