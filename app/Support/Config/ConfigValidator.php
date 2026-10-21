@@ -387,7 +387,7 @@ class ConfigValidator
         }
     }
 
-    private function validateSection(mixed $section, string $path): void
+    private function validateSection(mixed $section, string $path, bool $nested = false): void
     {
         if (! $this->isMap($section)) {
             $this->add($path, 'Expected an object.');
@@ -416,7 +416,13 @@ class ConfigValidator
             return;
         }
 
-        $this->validateProps($type, $props, "{$path}.props");
+        if ($nested && $type === 'group') {
+            $this->add("{$path}.type", 'A group cannot go inside another group.');
+
+            return;
+        }
+
+        $this->validateProps($type, $props, "{$path}.props", $nested);
     }
 
     /**
@@ -465,8 +471,12 @@ class ConfigValidator
         $this->optionalWholeNumber($style, 'buttonRadius', $path, 0, Contract::limit('maxCornerRadius'));
         $this->optionalWholeNumber($style, 'borderWidth', $path, 0, Contract::limit('maxBorderWidth'));
         $this->optionalWholeNumber($style, 'cornerRadius', $path, 0, Contract::limit('maxCornerRadius'));
-        $this->optionalWholeNumber($style, 'paddingX', $path, 0, Contract::limit('maxPadding'));
-        $this->optionalWholeNumber($style, 'paddingY', $path, 0, Contract::limit('maxPadding'));
+        foreach ([
+            'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+            'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+        ] as $side) {
+            $this->optionalWholeNumber($style, $side, $path, 0, Contract::limit('maxPadding'));
+        }
     }
 
     /** Typography, keyed by the named slot it applies to. */
@@ -534,7 +544,7 @@ class ConfigValidator
     }
 
     /** @param array<string, mixed> $props */
-    private function validateProps(string $type, array $props, string $path): void
+    private function validateProps(string $type, array $props, string $path, bool $nested = false): void
     {
         match ($type) {
             'hero' => $this->heroProps($props, $path),
@@ -555,6 +565,10 @@ class ConfigValidator
             'photo_carousel' => $this->photoCarouselProps($props, $path),
             'testimonials' => $this->testimonialsProps($props, $path),
             'team' => $this->teamProps($props, $path),
+            'container' => $this->containerProps($props, $path),
+            'group' => $this->groupProps($props, $path),
+            'item_detail' => $this->itemDetailProps($props, $path),
+            'cart' => $this->cartProps($props, $path),
             default => $this->add($path, 'Unknown section type.'),
         };
     }
@@ -607,6 +621,7 @@ class ConfigValidator
         }
         $this->requireBool($p['showPrices'] ?? null, "{$path}.showPrices");
         $this->validateItemSource($p['source'] ?? null, "{$path}.source");
+        $this->optionalItemScreen($p, $path);
     }
 
     /** @param array<string, mixed> $p */
@@ -616,6 +631,7 @@ class ConfigValidator
         $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
         $this->requireBool($p['showImages'] ?? null, "{$path}.showImages");
         $this->validateItemSource($p['source'] ?? null, "{$path}.source");
+        $this->optionalItemScreen($p, $path);
     }
 
     /** @param array<string, mixed> $p */
@@ -681,40 +697,46 @@ class ConfigValidator
 
                 continue;
             }
-            $this->allowOnly($button, $buttonPath, Contract::fields('button'));
-            $this->requireId($button['id'] ?? null, "{$buttonPath}.id");
-            $this->validateAction($button['action'] ?? null, "{$buttonPath}.action");
 
-            $icon = $button['icon'] ?? null;
-            if ($icon !== null && ! in_array($icon, Contract::vocabulary('tabIcons'), true)) {
-                $this->add("{$buttonPath}.icon", 'Not an icon we ship.');
-            }
+            $this->validateButton($button, $buttonPath, 'button');
+        }
+    }
 
-            $position = $button['iconPosition'] ?? null;
-            if ($position !== null && ! in_array($position, Contract::vocabulary('iconPositions'), true)) {
-                $this->add("{$buttonPath}.iconPosition", "Expected 'left' or 'right'.");
-            }
+    private function validateButton(array $button, string $path, string $fieldList): void
+    {
+        $this->allowOnly($button, $path, Contract::fields($fieldList));
+        $this->requireId($button['id'] ?? null, "{$path}.id");
+        $this->validateAction($button['action'] ?? null, "{$path}.action");
 
-            $size = $button['size'] ?? null;
-            if ($size !== null && ! in_array($size, Contract::vocabulary('buttonSizes'), true)) {
-                $this->add("{$buttonPath}.size", "Expected 'small', 'medium' or 'large'.");
-            }
+        $icon = $button['icon'] ?? null;
+        if ($icon !== null && ! in_array($icon, Contract::vocabulary('tabIcons'), true)) {
+            $this->add("{$path}.icon", 'Not an icon we ship.');
+        }
 
-            if (array_key_exists('fullWidth', $button) && $button['fullWidth'] !== null
-                && ! is_bool($button['fullWidth'])) {
-                $this->add("{$buttonPath}.fullWidth", 'Expected true or false.');
-            }
+        $position = $button['iconPosition'] ?? null;
+        if ($position !== null && ! in_array($position, Contract::vocabulary('iconPositions'), true)) {
+            $this->add("{$path}.iconPosition", "Expected 'left' or 'right'.");
+        }
 
-            $this->optionalWholeNumber(
-                $button, 'radius', $buttonPath, 0, Contract::limit('maxCornerRadius'),
-            );
+        $size = $button['size'] ?? null;
+        if ($size !== null && ! in_array($size, Contract::vocabulary('buttonSizes'), true)) {
+            $this->add("{$path}.size", "Expected 'small', 'medium' or 'large'.");
+        }
 
-            $hasLabel = is_string($button['label'] ?? null) && trim($button['label']) !== '';
-            if ($hasLabel) {
-                $this->optionalText($button, 'label', $buttonPath, 40);
-            } elseif ($icon === null) {
-                $this->add("{$buttonPath}.label", 'Give the button a label, an icon, or both.');
-            }
+        if (array_key_exists('fullWidth', $button) && $button['fullWidth'] !== null
+            && ! is_bool($button['fullWidth'])) {
+            $this->add("{$path}.fullWidth", 'Expected true or false.');
+        }
+
+        $this->optionalWholeNumber(
+            $button, 'radius', $path, 0, Contract::limit('maxCornerRadius'),
+        );
+
+        $hasLabel = is_string($button['label'] ?? null) && trim($button['label']) !== '';
+        if ($hasLabel) {
+            $this->optionalText($button, 'label', $path, 40);
+        } elseif ($icon === null) {
+            $this->add("{$path}.label", 'Give the button a label, an icon, or both.');
         }
     }
 
@@ -903,7 +925,7 @@ class ConfigValidator
         $this->allowOnly($p, $path, Contract::fields('sectionProps.team'));
         $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
 
-        if (array_key_exists('layout', $p) && ! in_array($p['layout'], Contract::vocabulary('peopleLayouts'), true)) {
+        if (array_key_exists('layout', $p) && ! in_array($p['layout'], Contract::vocabulary('stackDirections'), true)) {
             $this->add("{$path}.layout", 'Unknown layout.');
         }
 
@@ -933,14 +955,14 @@ class ConfigValidator
      *
      * @return array<int, mixed>|null
      */
-    private function boundedList(mixed $value, string $path, int $max): ?array
+    private function boundedList(mixed $value, string $path, int $max, bool $allowEmpty = false): ?array
     {
         if (! is_array($value) || ! array_is_list($value)) {
             $this->add($path, 'Expected a list.');
 
             return null;
         }
-        if ($value === []) {
+        if ($value === [] && ! $allowEmpty) {
             $this->add($path, 'Add at least one.');
 
             return null;
@@ -952,6 +974,158 @@ class ConfigValidator
         }
 
         return $value;
+    }
+
+    private function groupProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.group'));
+
+        $direction = $p['direction'] ?? null;
+        if ($direction !== null && ! in_array($direction, Contract::vocabulary('stackDirections'), true)) {
+            $this->add("{$path}.direction", "Expected 'column' or 'row'.");
+        }
+
+        $this->optionalWholeNumber($p, 'gap', $path, 0, Contract::limit('maxGap'));
+
+        $blocks = $this->boundedList(
+            $p['blocks'] ?? null, "{$path}.blocks", Contract::limit('maxGroupBlocks'), true,
+        );
+        if ($blocks === null) {
+            return;
+        }
+
+        foreach ($blocks as $index => $block) {
+            $this->validateSection($block, "{$path}.blocks.{$index}", true);
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function optionalItemScreen(array $p, string $path): void
+    {
+        if (array_key_exists('itemScreen', $p) && $p['itemScreen'] !== null) {
+            $this->requireId($p['itemScreen'], "{$path}.itemScreen");
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function cartProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.cart'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+        $this->optionalText($p, 'emptyText', $path, Contract::limit('maxShortText'));
+        $this->optionalText($p, 'ctaLabel', $path, 40);
+        $this->optionalAction($p, 'ctaAction', $path);
+    }
+
+    /** @param array<string, mixed> $p */
+    private function itemDetailProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.item_detail'));
+        $this->requireBool($p['showImage'] ?? null, "{$path}.showImage");
+        $this->requireBool($p['showPrice'] ?? null, "{$path}.showPrice");
+        $this->requireBool($p['showDescription'] ?? null, "{$path}.showDescription");
+
+        if (array_key_exists('aspectRatio', $p)) {
+            $this->requireRatio($p['aspectRatio'], "{$path}.aspectRatio");
+        }
+
+        $this->optionalText($p, 'ctaLabel', $path, 40);
+        $this->optionalAction($p, 'ctaAction', $path);
+    }
+
+    /** @param array<string, mixed> $p */
+    private function containerProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.container'));
+        $this->validateStack($p, $path, 0);
+    }
+
+    private function validateStack(array $stack, string $path, int $depth): void
+    {
+        $direction = $stack['direction'] ?? null;
+        if ($direction !== null && ! in_array($direction, Contract::vocabulary('stackDirections'), true)) {
+            $this->add("{$path}.direction", "Expected 'column' or 'row'.");
+        }
+
+        $this->optionalAlignment($stack, 'align', $path);
+        $this->optionalWholeNumber($stack, 'gap', $path, 0, Contract::limit('maxGap'));
+
+        $children = $this->boundedList(
+            $stack['children'] ?? null, "{$path}.children", Contract::limit('maxChildren'),
+        );
+        if ($children === null) {
+            return;
+        }
+
+        foreach ($children as $index => $child) {
+            $childPath = "{$path}.children.{$index}";
+            if (! $this->isMap($child)) {
+                $this->add($childPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->validateChild($child, $childPath, $depth);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $child
+     */
+    private function validateChild(array $child, string $path, int $depth): void
+    {
+        $type = $child['type'] ?? null;
+        if (! is_string($type) || ! in_array($type, Contract::vocabulary('childTypes'), true)) {
+            $this->add("{$path}.type", 'Not something we can draw inside a block.');
+
+            return;
+        }
+
+        if ($type === 'button') {
+            $this->validateButton($child, $path, 'childFields.button');
+
+            return;
+        }
+
+        $this->allowOnly($child, $path, Contract::fields("childFields.{$type}"));
+        $this->requireId($child['id'] ?? null, "{$path}.id");
+
+        match ($type) {
+            'text' => $this->textChild($child, $path),
+            'image' => $this->imageChild($child, $path),
+            'spacer' => $this->optionalWholeNumber(
+                $child, 'size', $path, 0, Contract::limit('maxPadding'),
+            ),
+            'container' => $depth > 0
+                ? $this->add("{$path}.children", 'A box inside a box cannot hold another one.')
+                : $this->validateStack($child, $path, $depth + 1),
+            default => null,
+        };
+    }
+
+    /** @param array<string, mixed> $child */
+    private function textChild(array $child, string $path): void
+    {
+        $this->requireText($child['text'] ?? null, "{$path}.text", Contract::limit('maxText'));
+
+        $role = $child['role'] ?? null;
+        if ($role !== null && ! in_array($role, Contract::vocabulary('textRoles'), true)) {
+            $this->add("{$path}.role", 'Not a text slot we draw.');
+        }
+
+        $this->optionalAlignment($child, 'align', $path);
+    }
+
+    /** @param array<string, mixed> $child */
+    private function imageChild(array $child, string $path): void
+    {
+        $this->requireUrl($child['imageUrl'] ?? null, "{$path}.imageUrl");
+
+        if (array_key_exists('aspectRatio', $child)) {
+            $this->requireRatio($child['aspectRatio'], "{$path}.aspectRatio");
+        }
+
+        $this->optionalAction($child, 'action', $path);
     }
 
     private function requireRatio(mixed $value, string $path): void
@@ -1128,6 +1302,13 @@ class ConfigValidator
         // Existence is checked in validateNavigationTargets, once all screens
         // are known — order in the config must not matter.
         $this->requireId($a['screenId'] ?? null, "{$path}.screenId");
+
+        // Shape only. Whether the item exists is deliberately not checked: a
+        // list filled from a `sourceRef` has items this server has never seen,
+        // so the only honest answer at save time is that the id is well formed.
+        if (array_key_exists('itemId', $a) && $a['itemId'] !== null) {
+            $this->requireId($a['itemId'], "{$path}.itemId");
+        }
     }
 
     /** @param array<string, mixed> $a */
@@ -1149,7 +1330,12 @@ class ConfigValidator
     private function addToCartAction(array $a, string $path): void
     {
         $this->allowOnly($a, $path, Contract::fields('actionFields.addToCart'));
-        $this->requireId($a['itemId'] ?? null, "{$path}.itemId");
+
+        // Optional: no id means the item the screen is about, which is what a
+        // button on a product page has to mean. See the contract's note.
+        if (array_key_exists('itemId', $a) && $a['itemId'] !== null) {
+            $this->requireId($a['itemId'], "{$path}.itemId");
+        }
 
         if (array_key_exists('quantity', $a) && $a['quantity'] !== null) {
             $quantity = $a['quantity'];
@@ -1205,6 +1391,15 @@ class ConfigValidator
                 && ! in_array($node['screenId'], $screenIds, true)
             ) {
                 $this->add("{$at}.screenId", 'This points at a screen that does not exist.');
+            }
+
+            // A list's `itemScreen` is a destination too, and a customer who
+            // deletes the product page leaves every row pointing at nothing.
+            if ($this->isMap($node)
+                && is_string($node['itemScreen'] ?? null)
+                && ! in_array($node['itemScreen'], $screenIds, true)
+            ) {
+                $this->add("{$at}.itemScreen", 'This points at a screen that does not exist.');
             }
 
             foreach ($node as $key => $child) {
