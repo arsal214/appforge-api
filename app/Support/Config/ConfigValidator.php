@@ -299,6 +299,11 @@ class ConfigValidator
             $this->allowOnly($screen, $path, Contract::fields('screen'));
             $id = $this->requireId($screen['id'] ?? null, "{$path}.id");
             $this->requireText($screen['title'] ?? null, "{$path}.title", Contract::limit('maxShortText'));
+            if (array_key_exists('present', $screen)
+                && ! in_array($screen['present'], Contract::vocabulary('screenPresentations'), true)
+            ) {
+                $this->add("{$path}.present", 'Expected page or sheet.');
+            }
 
             if ($id !== null) {
                 if (in_array($id, $ids, true)) {
@@ -621,7 +626,7 @@ class ConfigValidator
         }
         $this->requireBool($p['showPrices'] ?? null, "{$path}.showPrices");
         $this->validateItemSource($p['source'] ?? null, "{$path}.source");
-        $this->optionalItemScreen($p, $path);
+        $this->optionalTapProps($p, $path);
     }
 
     /** @param array<string, mixed> $p */
@@ -631,7 +636,7 @@ class ConfigValidator
         $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
         $this->requireBool($p['showImages'] ?? null, "{$path}.showImages");
         $this->validateItemSource($p['source'] ?? null, "{$path}.source");
-        $this->optionalItemScreen($p, $path);
+        $this->optionalTapProps($p, $path);
     }
 
     /** @param array<string, mixed> $p */
@@ -1000,10 +1005,14 @@ class ConfigValidator
     }
 
     /** @param array<string, mixed> $p */
-    private function optionalItemScreen(array $p, string $path): void
+    private function optionalTapProps(array $p, string $path): void
     {
         if (array_key_exists('itemScreen', $p) && $p['itemScreen'] !== null) {
             $this->requireId($p['itemScreen'], "{$path}.itemScreen");
+        }
+
+        if (array_key_exists('addOnTap', $p) && $p['addOnTap'] !== null) {
+            $this->requireBool($p['addOnTap'], "{$path}.addOnTap");
         }
     }
 
@@ -1343,6 +1352,10 @@ class ConfigValidator
                 $this->add("{$path}.quantity", 'Expected a whole number between 1 and 99.');
             }
         }
+
+        if (array_key_exists('screenId', $a) && $a['screenId'] !== null) {
+            $this->requireId($a['screenId'], "{$path}.screenId");
+        }
     }
 
     /** @param array<string, mixed> $a */
@@ -1386,7 +1399,7 @@ class ConfigValidator
             }
 
             if ($this->isMap($node)
-                && ($node['type'] ?? null) === 'navigate'
+                && in_array($node['type'] ?? null, ['navigate', 'addToCart'], true)
                 && is_string($node['screenId'] ?? null)
                 && ! in_array($node['screenId'], $screenIds, true)
             ) {
