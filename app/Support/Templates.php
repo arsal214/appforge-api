@@ -2,22 +2,8 @@
 
 namespace App\Support;
 
-/**
- * The starting points a customer can pick from.
- *
- * These are code, not rows. Each `industry` keys into `templateConfigs` in
- * `@appforge/components`, so a template only exists if the renderer can render
- * it. Put them in a database table and you gain the ability to create a
- * template the shell has never heard of — a config that renders as a blank
- * screen on a customer's phone. The trade is that adding a template is a
- * deploy, which is correct: it *is* a deploy, because the components ship with
- * it.
- *
- * These three are the plan's rank 1-3 industries.
- */
 final class Templates
 {
-    /** @var list<array{id: string, name: string, industry: string, tagline: string, description: string, accentColor: string}> */
     public const ALL = [
         [
             'id' => 'tpl_ecommerce',
@@ -45,7 +31,6 @@ final class Templates
         ],
     ];
 
-    /** @return array{id: string, name: string, industry: string, tagline: string, description: string, accentColor: string}|null */
     public static function find(string $id): ?array
     {
         foreach (self::ALL as $template) {
@@ -57,7 +42,6 @@ final class Templates
         return null;
     }
 
-    /** @return list<string> */
     public static function ids(): array
     {
         return array_column(self::ALL, 'id');

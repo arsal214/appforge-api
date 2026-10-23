@@ -9,16 +9,12 @@ use Illuminate\Validation\Rule;
 
 class StoreAppRequest extends FormRequest
 {
-    /**
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [
             'name' => ['required', 'string', 'min:2', 'max:120'],
             'templateId' => ['required', 'string', Rule::in(Templates::ids())],
-            // `present` and not `required`: the panel always sends the key and
-            // null is a legitimate value (an app can be built without a site).
+
             'sourceUrl' => ['present', 'nullable', 'string', 'url:http,https', 'max:2048'],
             'category' => [
                 'sometimes',
@@ -29,9 +25,6 @@ class StoreAppRequest extends FormRequest
         ];
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function messages(): array
     {
         return [

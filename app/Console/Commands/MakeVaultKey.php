@@ -22,9 +22,6 @@ class MakeVaultKey extends Command
             'Development only. Production uses a KMS and refuses to boot without one.'
         );
 
-        // Printed rather than written into .env: a command that edits .env in
-        // place will eventually do it on the wrong machine, and losing this key
-        // makes every stored credential unrecoverable.
         return self::SUCCESS;
     }
 }

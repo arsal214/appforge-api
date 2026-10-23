@@ -8,10 +8,6 @@ use Illuminate\Http\JsonResponse;
 
 class TemplateController extends Controller
 {
-    /**
-     * Public on purpose: the marketing site's preview page offers a template
-     * before anyone has an account. There is nothing tenant-specific here.
-     */
     public function index(): JsonResponse
     {
         return response()->json(['data' => Templates::ALL]);

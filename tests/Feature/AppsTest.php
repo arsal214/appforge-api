@@ -23,15 +23,12 @@ class AppsTest extends TestCase
             ->assertOk()
             ->json('data');
 
-        // The exact key set. An extra key is harmless; a missing or snake_case
-        // one fails zod at the boundary and blanks the whole panel.
         $this->assertEqualsCanonicalizing([
             'id', 'organizationId', 'name', 'slug', 'sourceUrl', 'templateId',
             'industry', 'category', 'status', 'accentColor', 'publishedVersion',
             'createdAt', 'updatedAt',
         ], array_keys($data));
 
-        // zod's z.iso.datetime() wants a Z-suffixed ISO 8601 string.
         $this->assertMatchesRegularExpression(
             '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/',
             $data['createdAt'],
@@ -97,8 +94,6 @@ class AppsTest extends TestCase
             'sourceUrl' => 'https://samspizza.example',
         ])->assertCreated()->json('data');
 
-        // The client picks a template; it does not get to choose the industry
-        // or the accent colour independently of it.
         $this->assertSame('restaurant', $data['industry']);
         $this->assertSame('#b45309', $data['accentColor']);
         $this->assertSame('draft', $data['status']);
@@ -148,8 +143,6 @@ class AppsTest extends TestCase
             'source_url' => 'https://old.example',
         ]);
 
-        // `filled` would have silently dropped this. Clearing a field has to
-        // be expressible.
         $this->actingAs($user)
             ->patchJson("/api/apps/{$app->id}", ['sourceUrl' => null])
             ->assertOk()
@@ -174,8 +167,6 @@ class AppsTest extends TestCase
         $user = User::factory()->create();
         $app = App::factory()->create(['organization_id' => $user->organization_id]);
 
-        // The column is char(7) and the value reaches a stylesheet and a native
-        // theme. Anything else truncates or renders as nothing.
         $this->actingAs($user)
             ->patchJson("/api/apps/{$app->id}", ['accentColor' => 'teal'])
             ->assertStatus(422)
@@ -188,8 +179,6 @@ class AppsTest extends TestCase
         $user = User::factory()->create();
         $app = App::factory()->live()->create(['organization_id' => $user->organization_id]);
 
-        // It exists in two store consoles this API does not control. Deleting
-        // the row would leave a customer's app on sale with nothing behind it.
         $this->actingAs($user)
             ->deleteJson("/api/apps/{$app->id}")
             ->assertStatus(422);
@@ -258,7 +247,6 @@ class AppsTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors(['email']);
 
-        // ...but keeping your own is not a duplicate.
         $this->actingAs($user)->patchJson('/api/account', [
             'name' => 'New Name',
             'email' => $user->email,

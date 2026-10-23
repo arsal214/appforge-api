@@ -14,13 +14,6 @@ class ConfigTest extends TestCase
 {
     use RefreshDatabase;
 
-    /**
-     * A minimal config that passes. Every test that wants an invalid one starts
-     * here and breaks exactly one thing, so a failure names its own cause.
-     *
-     * @param  array<string, mixed>  $overrides
-     * @return array<string, mixed>
-     */
     private function config(array $overrides = []): array
     {
         return array_replace([
@@ -64,21 +57,17 @@ class ConfigTest extends TestCase
         return (new ConfigValidator)->validate($config);
     }
 
-    /* --- The validator ------------------------------------------------- */
-
     #[Test]
     public function the_baseline_config_is_valid(): void
     {
-        // If this ever fails, every other test in this file is meaningless.
+
         $this->assertSame([], $this->errors($this->config()));
     }
 
     #[Test]
     public function an_unexpected_field_anywhere_is_rejected(): void
     {
-        // This is the rule that keeps credentials out of configs. A config is
-        // served to an app binary anyone can unpack, so a stray `apiKey` is a
-        // published secret.
+
         $withSecret = $this->config();
         $withSecret['shopifyAccessToken'] = 'shpat_deadbeef';
 
@@ -96,9 +85,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function a_javascript_url_is_rejected(): void
     {
-        // The panel preview renders these same components through
-        // react-native-web in a real browser, so this is stored XSS before it
-        // is anything else.
+
         foreach (['javascript:alert(1)', 'data:text/html,<script>', 'file:///etc/passwd'] as $url) {
             $config = $this->config();
             $config['screens'][0]['sections'][0]['props']['ctaAction'] = [
@@ -117,9 +104,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function an_action_outside_the_closed_vocabulary_is_rejected(): void
     {
-        // There is no expression language to extend. Adding a capability means
-        // adding a variant to the schema and shipping a shell that understands
-        // it — not accepting a new string here.
+
         foreach (['eval', 'runScript', 'navigate2', ''] as $type) {
             $config = $this->config();
             $config['screens'][0]['sections'][0]['props']['ctaAction'] = ['type' => $type];
@@ -135,7 +120,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function a_navigate_action_pointing_nowhere_is_rejected(): void
     {
-        // Silent failure on a real phone: the button just does nothing.
+
         $config = $this->config();
         $config['screens'][0]['sections'][0]['props']['ctaAction'] = [
             'type' => 'navigate',
@@ -151,8 +136,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function a_navigate_action_may_point_forward_to_a_later_screen(): void
     {
-        // Resolution happens in a second pass, so ordering in the config must
-        // not matter.
+
         $config = $this->config();
         $config['screens'][0]['sections'][0]['props']['ctaAction'] = [
             'type' => 'navigate',
@@ -175,7 +159,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function an_unknown_tab_icon_is_rejected(): void
     {
-        // The shell ships a fixed icon set; anything else is a blank square.
+
         $config = $this->config();
         $config['tabs'][0]['icon'] = 'rocket';
 
@@ -210,7 +194,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function a_config_larger_than_the_cap_is_rejected(): void
     {
-        // It is downloaded over mobile data at every cold start.
+
         $config = $this->config();
         $config['screens'][0]['sections'][0]['props']['subtitle'] = str_repeat('x', 300_000);
 
@@ -220,9 +204,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function a_deeply_nested_config_is_rejected_before_anything_walks_it(): void
     {
-        // `[[[[[…` is two bytes per level, so this sits well under the size cap
-        // while being deep enough to blow PHP's stack during the navigation
-        // walk. Depth has to be checked first, not caught later.
+
         $nested = [];
         for ($i = 0; $i < 5_000; $i++) {
             $nested = [$nested];
@@ -237,8 +219,7 @@ class ConfigTest extends TestCase
     #[Test]
     public function a_section_whose_props_are_all_optional_may_be_empty(): void
     {
-        // Regression guard: json_decode turns both {} and [] into the same
-        // empty PHP array, and a naive is-this-a-map check rejects it.
+
         $config = $this->config();
         $config['screens'][0]['sections'][] = [
             'id' => 'sec_contact',
@@ -248,8 +229,6 @@ class ConfigTest extends TestCase
 
         $this->assertSame([], $this->errors($config));
     }
-
-    /* --- The endpoints -------------------------------------------------- */
 
     private function ownApp(User $user): App
     {
@@ -277,7 +256,6 @@ class ConfigTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.config.app.slug', 'sams-pizza');
 
-        // One draft per app, overwritten — not one row per save.
         $this->actingAs($user)
             ->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()])
             ->assertOk();
@@ -296,8 +274,7 @@ class ConfigTest extends TestCase
         $this->actingAs($user)
             ->putJson("/api/apps/{$app->id}/config", ['config' => $config])
             ->assertStatus(422)
-            // The path is what lets the panel highlight the offending control
-            // instead of saying "invalid" and leaving the customer to hunt.
+
             ->assertJsonValidationErrors(['config.screens.0.sections.0.props.title']);
 
         $this->assertDatabaseCount('app_configs', 0);
@@ -338,8 +315,6 @@ class ConfigTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.version', 2);
 
-        // `ready` means publishable, not published. Only a build that a human
-        // shepherded through review sets `live`.
         $this->assertSame('ready', $app->fresh()->status);
         $this->assertNull($app->fresh()->published_version);
     }
@@ -357,8 +332,6 @@ class ConfigTest extends TestCase
         $changed['app']['name'] = 'Renamed Entirely';
         $this->actingAs($user)->putJson("/api/apps/{$app->id}/config", ['config' => $changed])->assertOk();
 
-        // A version is what a phone downloaded. If editing the draft could
-        // reach back into it, a rollback would have nothing to roll back to.
         $version = $app->versions()->first();
         $this->assertSame('Sams Pizza', $version->config['app']['name']);
     }
@@ -401,10 +374,6 @@ class ConfigTest extends TestCase
         $user = User::factory()->create();
         $app = $this->ownApp($user);
 
-        // 404 rather than 405: no route matches that URI for *any* method, so
-        // the path does not exist at all. A 405 would mean "this resource is
-        // here, just not editable that way", which is a weaker statement than
-        // the one this test is pinning.
         $this->actingAs($user)->putJson("/api/apps/{$app->id}/versions/1")->assertNotFound();
         $this->actingAs($user)->deleteJson("/api/apps/{$app->id}/versions/1")->assertNotFound();
     }

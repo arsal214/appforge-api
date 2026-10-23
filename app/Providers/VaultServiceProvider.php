@@ -8,16 +8,6 @@ use App\Support\Vault\LocalKeyManagement;
 use App\Support\Vault\VaultException;
 use Illuminate\Support\ServiceProvider;
 
-/**
- * Wires the vault, and refuses to wire a development one in production.
- *
- * That refusal is the point of this class. The local key manager holds the
- * master key in the same environment as the ciphertext, which is fine on a
- * laptop and indefensible with a real customer's Shopify token. Left to
- * configuration alone, that difference is one missing environment variable away
- * from going unnoticed — so it fails at boot instead, loudly, where it cannot
- * be ignored.
- */
 class VaultServiceProvider extends ServiceProvider
 {
     public function register(): void
@@ -27,9 +17,7 @@ class VaultServiceProvider extends ServiceProvider
 
             $manager = match ($driver) {
                 'local' => new LocalKeyManagement($this->localMasterKey()),
-                // 'kms' => new AwsKeyManagement(...) — deliberately absent.
-                // See the vault README: an untested KMS client is worse than
-                // none, because it looks finished.
+
                 default => throw new VaultException(
                     "Unknown vault driver [{$driver}]. Only 'local' exists today.",
                 ),

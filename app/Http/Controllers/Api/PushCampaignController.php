@@ -11,12 +11,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
-/**
- * Composing, scheduling and sending push notifications.
- *
- * Same tenancy rule as everything else: campaigns are reached only through an
- * app the caller already proved they own.
- */
 class PushCampaignController extends Controller
 {
     public function index(Request $request, string $app): AnonymousResourceCollection
@@ -28,7 +22,6 @@ class PushCampaignController extends Controller
         );
     }
 
-    /** How many phones a campaign could currently reach. */
     public function audience(Request $request, string $app): JsonResponse
     {
         $model = $this->findOwned($request, $app);
@@ -38,8 +31,7 @@ class PushCampaignController extends Controller
                 'total' => $model->devices()->count(),
                 'ios' => $model->devices()->where('platform', 'ios')->count(),
                 'android' => $model->devices()->where('platform', 'android')->count(),
-                // Delivery is not wired up, and the panel must say so rather
-                // than showing a Send button that quietly does nothing.
+
                 'canDeliver' => false,
                 'blockedReason' => 'Push delivery needs your own Apple and Google developer accounts. Nothing is sent yet.',
             ],
@@ -69,9 +61,6 @@ class PushCampaignController extends Controller
         $model = $this->findOwned($request, $app);
         $record = $model->pushCampaigns()->findOrFail($campaign);
 
-        // A sent notification is history. Deleting the record would not unsend
-        // it — it would only remove our ability to answer "what did you send
-        // me?" when someone asks.
         if (! $record->isEditable()) {
             abort(422, 'A notification that has already been sent can\'t be deleted.');
         }
@@ -81,13 +70,6 @@ class PushCampaignController extends Controller
         return response()->json(['data' => null]);
     }
 
-    /**
-     * Send now.
-     *
-     * Runs inline rather than through a queue because it currently delivers
-     * nothing. The moment a real sender lands this becomes a dispatched job —
-     * an install base of any size cannot be walked inside an HTTP request.
-     */
     public function send(Request $request, string $app, string $campaign): JsonResponse
     {
         $model = $this->findOwned($request, $app);

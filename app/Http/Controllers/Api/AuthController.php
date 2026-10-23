@@ -19,11 +19,6 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    /**
-     * Signing up creates the organisation and its first user together. There is
-     * no path to a user without an organisation — every query in this API is
-     * scoped by one, and a user who has none would be a permanent special case.
-     */
     public function register(RegisterRequest $request): JsonResponse
     {
         [$user, $organization] = DB::transaction(function () use ($request) {
@@ -54,9 +49,6 @@ class AuthController extends Controller
         if (! $user || ! Hash::check($request->validated('password'), $user->password)) {
             RateLimiter::hit($this->throttleKey($request));
 
-            // One message for both branches. Distinguishing "no such account"
-            // from "wrong password" turns the login form into an oracle for
-            // which of our customers' staff emails are registered.
             throw ValidationException::withMessages([
                 'email' => ['Those credentials do not match our records.'],
             ]);
@@ -69,8 +61,7 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        // The token used to make *this* request, not every token the user has.
-        // Logging out of a laptop must not sign them out on their phone.
+
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['data' => null], 200);
@@ -99,11 +90,6 @@ class AuthController extends Controller
         ], $status);
     }
 
-    /**
-     * Per-email-and-IP throttling on top of the route's blanket limit. The
-     * route limit alone lets an attacker spread guesses for one account across
-     * many addresses; this one follows the account being attacked.
-     */
     private function ensureNotRateLimited(LoginRequest $request): void
     {
         if (! RateLimiter::tooManyAttempts($this->throttleKey($request), 5)) {

@@ -22,20 +22,11 @@ class AppVersionController extends Controller
         $model = $this->findOwned($request, $app);
 
         return AppVersionResource::collection(
-            // Without the config blob: a version list is a list, and shipping
-            // twenty configs to render twenty dates is wasteful.
+
             $model->versions()->orderByDesc('version')->get(['id', 'app_id', 'version', 'schema_version', 'notes', 'created_at'])
         );
     }
 
-    /**
-     * Freeze the current draft as a new immutable version.
-     *
-     * The draft is re-validated here even though it was validated on save. The
-     * two are not the same check in practice: rules tighten over time, and a
-     * draft written months ago against looser rules must not reach a phone
-     * just because it was legal when it was typed.
-     */
     public function store(Request $request, string $app): JsonResponse
     {
         $model = $this->findOwned($request, $app);
@@ -59,9 +50,6 @@ class AppVersionController extends Controller
 
         $version = $this->createNextVersion($model, $draft->config, $notes, $request->user()->getKey());
 
-        // `ready` means "there is something publishable"; it does not mean the
-        // app is in a store. Only a build that a human has shepherded through
-        // review sets `live` and `published_version`.
         if ($model->status === 'draft' || $model->status === 'rejected') {
             $model->update(['status' => 'ready']);
         }
@@ -69,14 +57,9 @@ class AppVersionController extends Controller
         return (new AppVersionResource($version))->response()->setStatusCode(201);
     }
 
-    /**
-     * @param  array<string, mixed>  $config
-     */
     private function createNextVersion(ClientApp $app, array $config, ?string $notes, string $userId): AppVersion
     {
-        // Two publishes landing together must not both become version 4. The
-        // unique index on (app_id, version) is the authority; this retries
-        // rather than trusting a read-then-write to have been atomic.
+
         for ($attempt = 0; $attempt < 3; $attempt++) {
             try {
                 return DB::transaction(function () use ($app, $config, $notes, $userId) {
