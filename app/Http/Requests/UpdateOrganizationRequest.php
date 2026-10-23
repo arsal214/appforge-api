@@ -6,9 +6,6 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class UpdateOrganizationRequest extends FormRequest
 {
-    /**
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [
@@ -16,9 +13,6 @@ class UpdateOrganizationRequest extends FormRequest
         ];
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function messages(): array
     {
         return [

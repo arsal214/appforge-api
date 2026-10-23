@@ -7,17 +7,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Keys are camelCase because the panel's zod schemas are the contract and they
- * are written in the language the panel is written in. Converting on the server
- * once beats converting in every component.
- *
  * @mixin App
  */
 class AppResource extends JsonResource
 {
-    /**
-     * @return array<string, mixed>
-     */
     public function toArray(Request $request): array
     {
         return [

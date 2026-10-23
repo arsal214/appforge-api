@@ -9,15 +9,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/**
- * The tests that matter most in this repo.
- *
- * Everything else here is a field that serialises wrong and gets noticed in a
- * day. A tenancy hole is one customer reading another customer's business, and
- * it is the failure that ends the company. These run against MySQL, not sqlite
- * in memory, so the foreign keys and column types under test are the ones that
- * ship.
- */
 class TenancyTest extends TestCase
 {
     use RefreshDatabase;
@@ -33,8 +24,6 @@ class TenancyTest extends TestCase
         $user = User::factory()->create();
         $theirs = $this->otherOrgApp();
 
-        // 403 would confirm the record exists, which tells a competitor that a
-        // particular business is our customer. The status code is the leak.
         $this->actingAs($user)
             ->getJson("/api/apps/{$theirs->id}")
             ->assertNotFound();
@@ -93,10 +82,7 @@ class TenancyTest extends TestCase
     #[Test]
     public function the_global_scope_fails_closed_without_an_authenticated_user(): void
     {
-        // Belt and braces: the controllers scope through the relationship, so
-        // this scope is the second line of defence. If it ever silently stops
-        // filtering, a query written later without the relationship would go
-        // unscoped — so assert it returns nothing rather than everything.
+
         App::factory()->count(3)->create();
 
         $this->assertSame(0, App::query()->count());

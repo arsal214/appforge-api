@@ -5,13 +5,6 @@ namespace App\Models;
 use App\Models\Concerns\HasPrefixedUlid;
 use Illuminate\Database\Eloquent\Model;
 
-/**
- * Append-only record of who touched which credential, and why.
- *
- * Same rules as the admin audit log, for the same reason: a trail that can be
- * edited is not a trail. No `updated_at`, mass assignment closed, and hooks that
- * refuse changes outright.
- */
 class CredentialAccess extends Model
 {
     use HasPrefixedUlid;

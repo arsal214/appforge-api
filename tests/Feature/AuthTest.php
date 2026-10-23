@@ -30,8 +30,6 @@ class AuthTest extends TestCase
             ],
         ]);
 
-        // Normalised on the way in, or the same person registers twice and can
-        // log in as neither reliably.
         $this->assertSame('sam@example.com', $response->json('data.user.email'));
         $this->assertSame(
             $response->json('data.organization.id'),
@@ -67,8 +65,7 @@ class AuthTest extends TestCase
             'password' => 'correct horse battery',
         ])
             ->assertStatus(422)
-            // The key must be the camelCase field name the panel's form uses,
-            // or the message renders nowhere.
+
             ->assertJsonValidationErrors(['email']);
     }
 
@@ -133,8 +130,6 @@ class AuthTest extends TestCase
             'password' => 'wrong',
         ])->assertStatus(422);
 
-        // Any difference here is an oracle for which email addresses have
-        // accounts with us.
         $this->assertSame($wrongPassword->json('errors'), $noSuchUser->json('errors'));
     }
 
@@ -151,10 +146,6 @@ class AuthTest extends TestCase
 
         $this->assertDatabaseCount('personal_access_tokens', 1);
 
-        // Laravel's RequestGuard memoises the user it resolved, and the guard
-        // instance outlives a single request inside one test. Without this the
-        // next two calls would replay the first request's authentication and
-        // the test would pass no matter what logout did.
         $this->forgetAuthentication();
 
         $this->withHeader('Authorization', "Bearer {$laptop}")
@@ -163,7 +154,6 @@ class AuthTest extends TestCase
 
         $this->forgetAuthentication();
 
-        // Signing out of a laptop must not sign you out on your phone.
         $this->withHeader('Authorization', "Bearer {$phone}")
             ->getJson('/api/auth/me')
             ->assertOk();

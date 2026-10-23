@@ -5,26 +5,16 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rules\Password;
 
-/**
- * Field names are camelCase throughout the request layer, matching the
- * response layer and the panel's zod schemas. Laravel keys `errors` by field
- * name and the panel maps those keys straight onto form inputs, so a snake_case
- * rule here would silently orphan the message.
- */
 class RegisterRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
         if (is_string($this->input('email'))) {
-            // Normalise before the uniqueness check, or "Joe@x.com" and
-            // "joe@x.com" both register and neither can log in reliably.
+
             $this->merge(['email' => strtolower(trim($this->input('email')))]);
         }
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [
@@ -35,9 +25,6 @@ class RegisterRequest extends FormRequest
         ];
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function messages(): array
     {
         return [

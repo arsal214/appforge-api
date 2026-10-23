@@ -567,6 +567,8 @@ class ConfigValidator
             'divider' => $this->dividerProps($props, $path),
             'feature_list' => $this->featureListProps($props, $path),
             'faq' => $this->faqProps($props, $path),
+            'link_list' => $this->linkListProps($props, $path),
+            'details' => $this->detailsProps($props, $path),
             'photo_carousel' => $this->photoCarouselProps($props, $path),
             'testimonials' => $this->testimonialsProps($props, $path),
             'team' => $this->teamProps($props, $path),
@@ -868,6 +870,77 @@ class ConfigValidator
             $this->requireId($item['id'] ?? null, "{$itemPath}.id");
             $this->requireText($item['question'] ?? null, "{$itemPath}.question", Contract::limit('maxShortText'));
             $this->requireText($item['answer'] ?? null, "{$itemPath}.answer", Contract::limit('maxText'));
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function detailsProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.details'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+        $this->optionalText($p, 'note', $path, Contract::limit('maxText'));
+
+        $fields = $this->boundedList($p['fields'] ?? null, "{$path}.fields", Contract::limit('maxDetailFields'));
+        if ($fields === null) {
+            return;
+        }
+
+        foreach ($fields as $index => $field) {
+            $fieldPath = "{$path}.fields.{$index}";
+            if (! $this->isMap($field)) {
+                $this->add($fieldPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($field, $fieldPath, Contract::fields('detailField'));
+            $this->requireId($field['id'] ?? null, "{$fieldPath}.id");
+            $this->requireText($field['label'] ?? null, "{$fieldPath}.label", Contract::limit('maxLabel'));
+            $this->optionalText($field, 'placeholder', $fieldPath, Contract::limit('maxShortText'));
+
+            if (array_key_exists('kind', $field)
+                && ! in_array($field['kind'], Contract::vocabulary('detailKinds'), true)
+            ) {
+                $this->add("{$fieldPath}.kind", 'Expected line, paragraph, phone or email.');
+            }
+
+            if (array_key_exists('required', $field) && $field['required'] !== null) {
+                $this->requireBool($field['required'], "{$fieldPath}.required");
+            }
+        }
+    }
+
+    /** @param array<string, mixed> $p */
+    private function linkListProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.link_list'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+
+        $items = $this->boundedList($p['items'] ?? null, "{$path}.items", Contract::limit('maxLinks'));
+        if ($items === null) {
+            return;
+        }
+
+        foreach ($items as $index => $item) {
+            $itemPath = "{$path}.items.{$index}";
+            if (! $this->isMap($item)) {
+                $this->add($itemPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($item, $itemPath, Contract::fields('linkItem'));
+            $this->requireId($item['id'] ?? null, "{$itemPath}.id");
+            $this->requireText($item['label'] ?? null, "{$itemPath}.label", Contract::limit('maxLabel'));
+            $this->optionalText($item, 'sublabel', $itemPath, Contract::limit('maxShortText'));
+
+            if (array_key_exists('icon', $item)
+                && ! in_array($item['icon'], Contract::vocabulary('tabIcons'), true)
+            ) {
+                $this->add("{$itemPath}.icon", 'Unknown icon.');
+            }
+
+            $this->optionalAction($item, 'action', $itemPath);
         }
     }
 

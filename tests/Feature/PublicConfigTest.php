@@ -9,22 +9,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/**
- * The only unauthenticated endpoint that serves customer data. Every test here
- * is about what it must *not* say — and about the fact that it works at all.
- *
- * **Nothing in this file calls `actingAs`.** The first version did, publishing
- * through the authenticated API before fetching publicly, and every test passed
- * while the endpoint was completely broken: Laravel's RequestGuard kept that
- * user resolved into the later request, so `OrganizationScope` matched the right
- * organisation instead of failing closed the way it does in production. Fixtures
- * are built with models directly so that no request here has ever had a user.
- */
 class PublicConfigTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** @return array<string, mixed> */
     private function config(string $name = 'Sams Pizza'): array
     {
         return [
@@ -73,9 +61,7 @@ class PublicConfigTest extends TestCase
     #[Test]
     public function a_published_config_is_served_with_no_authentication_at_all(): void
     {
-        // The regression guard for the bug this file missed the first time: the
-        // App model is tenant-scoped, and with no user that scope applies
-        // `1 = 0`. If this controller ever goes back to querying it, this fails.
+
         $app = $this->app();
         $this->publish($app, 1, 'Sams Pizza');
 
@@ -95,9 +81,6 @@ class PublicConfigTest extends TestCase
 
         $body = $this->getJson("/api/public/configs/{$app->id}")->assertOk()->json();
 
-        // An app id is guessable in principle. A response that also revealed the
-        // owning organisation — or merely that this business is a customer of
-        // ours — would be a leak on an endpoint with no authentication.
         $this->assertSame(['data'], array_keys($body));
 
         $flat = (string) json_encode($body);
@@ -137,9 +120,6 @@ class PublicConfigTest extends TestCase
 
         $app->delete();
 
-        // Soft deleted, so the row and its versions still exist. It must still
-        // stop being served, or "delete my app" would not delete anything a
-        // customer's own users could see.
         $this->getJson("/api/public/configs/{$app->id}")->assertNotFound();
     }
 
@@ -151,7 +131,6 @@ class PublicConfigTest extends TestCase
         $missing = $this->getJson('/api/public/configs/app_01jz00000000000000000000');
         $unpub = $this->getJson("/api/public/configs/{$unpublished->id}");
 
-        // Otherwise the endpoint is an oracle for which app ids exist.
         $missing->assertNotFound();
         $unpub->assertNotFound();
         $this->assertSame($missing->json(), $unpub->json());
@@ -165,8 +144,6 @@ class PublicConfigTest extends TestCase
 
         $response = $this->getJson("/api/public/configs/{$app->id}")->assertOk();
 
-        // Every cold start of every app hits this. Without caching, launch
-        // spikes land on the origin.
         $this->assertStringContainsString('max-age=60', (string) $response->headers->get('Cache-Control'));
         $this->assertSame('"'.$version->id.'"', $response->headers->get('ETag'));
     }
@@ -174,8 +151,7 @@ class PublicConfigTest extends TestCase
     #[Test]
     public function it_serves_the_shared_conformance_fixture_intact(): void
     {
-        // End to end across three repos: the fixture appforge-schema owns, which
-        // appforge-api validates, served in the shape appforge-shell accepts.
+
         $raw = file_get_contents(
             dirname(__DIR__, 2).'/../appforge-schema/fixtures/valid/every-section.json',
         );
@@ -194,14 +170,6 @@ class PublicConfigTest extends TestCase
             ->assertOk()
             ->json('data');
 
-        // `assertEquals`, not `assertSame`: MySQL's `json` column type does not
-        // store the document you gave it. It normalises to a binary form with
-        // object keys sorted, so key order does not survive a round trip and a
-        // byte-for-byte assertion is not available.
-        //
-        // Nothing depends on order — the shell reads by key, and the ETag is the
-        // version id — but it is worth knowing before someone tries to hash a
-        // config server-side and compare it to a hash taken on a device.
         $this->assertEquals($config, $served, 'the config must survive the round trip');
     }
 }

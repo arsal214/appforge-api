@@ -8,16 +8,10 @@ use App\Support\Templates;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
-/**
- * @extends Factory<App>
- */
 class AppFactory extends Factory
 {
     protected $model = App::class;
 
-    /**
-     * @return array<string, mixed>
-     */
     public function definition(): array
     {
         $template = fake()->randomElement(Templates::ALL);

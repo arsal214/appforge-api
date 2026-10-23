@@ -9,11 +9,6 @@ use Illuminate\Support\Str;
 
 class OrganizationController extends Controller
 {
-    /**
-     * There is no organisation id in the route. A user belongs to exactly one
-     * organisation and may only edit that one, so taking an id from the client
-     * would add a parameter whose only possible use is to try someone else's.
-     */
     public function update(UpdateOrganizationRequest $request): OrganizationResource
     {
         $organization = $request->user()->organization;

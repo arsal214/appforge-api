@@ -9,10 +9,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/**
- * The HTTP surface of the vault. The defining property under test is a
- * negative one: no response, on any route, ever contains a secret.
- */
 class CredentialApiTest extends TestCase
 {
     use RefreshDatabase;
@@ -24,7 +20,6 @@ class CredentialApiTest extends TestCase
         return App::factory()->create(['organization_id' => $user->organization_id]);
     }
 
-    /** @return array<string, string> */
     private function woo(): array
     {
         return [
@@ -58,9 +53,7 @@ class CredentialApiTest extends TestCase
     #[Test]
     public function no_endpoint_returns_the_secret(): void
     {
-        // The property this whole design exists to hold. Checked against the raw
-        // response body, not a parsed field, so a secret leaking through any key
-        // at any depth still fails.
+
         $user = User::factory()->create();
         $app = $this->ownApp($user);
 
@@ -87,9 +80,7 @@ class CredentialApiTest extends TestCase
     #[Test]
     public function there_is_no_route_that_reveals_a_credential(): void
     {
-        // A reveal button is a screenshot, a support call, and a browser-history
-        // entry waiting to happen. Decryption belongs to the proxy and the build
-        // worker, not the panel.
+
         $user = User::factory()->create();
         $app = $this->ownApp($user);
         $this->actingAs($user)
@@ -102,10 +93,6 @@ class CredentialApiTest extends TestCase
         ] as $path) {
             $response = $this->actingAs($user)->getJson($path);
 
-            // Asserting the property rather than a status code: 404 and 405 both
-            // prove there is no such route, and pinning one of them would make
-            // this test about Laravel's routing internals instead of about the
-            // secret staying secret.
             $this->assertTrue(
                 $response->getStatusCode() >= 400,
                 "{$path} answered successfully",
@@ -121,8 +108,7 @@ class CredentialApiTest extends TestCase
     #[Test]
     public function a_partial_credential_is_rejected(): void
     {
-        // A half-set credential fails at the worst possible moment — mid-build,
-        // or mid-checkout for someone's customer.
+
         $user = User::factory()->create();
         $app = $this->ownApp($user);
 
@@ -167,8 +153,7 @@ class CredentialApiTest extends TestCase
     #[Test]
     public function the_panel_is_told_when_key_management_is_not_production_grade(): void
     {
-        // Silently protecting real keys with a development key is precisely the
-        // failure this flag exists to prevent.
+
         $user = User::factory()->create();
         $app = $this->ownApp($user);
 
@@ -208,7 +193,6 @@ class CredentialApiTest extends TestCase
                 'consumerSecret' => 'cs_live_rotated_value_aaaa',
             ]);
 
-        // A revoked key must not still be sitting in our database.
         $this->assertDatabaseCount('app_credentials', 1);
 
         $woo = collect(

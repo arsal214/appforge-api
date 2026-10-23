@@ -13,25 +13,15 @@ class LoginRequest extends FormRequest
         }
     }
 
-    /**
-     * @return array<string, mixed>
-     */
     public function rules(): array
     {
         return [
-            // Deliberately looser than registration: no `email:rfc`, no length
-            // cap beyond sanity. A stricter rule here tells an attacker which
-            // strings are not addresses we hold, and tells a legitimate user
-            // with an unusual address that their password is fine when the
-            // real problem is the email field.
+
             'email' => ['required', 'string', 'max:190'],
             'password' => ['required', 'string'],
         ];
     }
 
-    /**
-     * @return array<string, string>
-     */
     public function messages(): array
     {
         return [

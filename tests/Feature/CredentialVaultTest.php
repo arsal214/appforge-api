@@ -12,10 +12,6 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
-/**
- * The vault holds the keys to other people's businesses. These tests are the
- * closest thing this repository has to a safety case for that.
- */
 class CredentialVaultTest extends TestCase
 {
     use RefreshDatabase;
@@ -30,7 +26,6 @@ class CredentialVaultTest extends TestCase
         return App::factory()->for(Organization::factory())->create();
     }
 
-    /** @return array<string, string> */
     private function wooValues(): array
     {
         return [
@@ -39,8 +34,6 @@ class CredentialVaultTest extends TestCase
             'consumerSecret' => 'cs_live_zyxwvutsrq123456',
         ];
     }
-
-    /* --- The round trip -------------------------------------------------- */
 
     #[Test]
     public function a_credential_round_trips(): void
@@ -60,8 +53,6 @@ class CredentialVaultTest extends TestCase
         $app = $this->app();
         $this->vault()->put($app, 'woocommerce', $this->wooValues(), null);
 
-        // Read the raw row, not the model. Anything readable here is readable
-        // by anyone who gets a database dump.
         $row = (array) \DB::table('app_credentials')->first();
         $raw = json_encode($row);
 
@@ -76,19 +67,13 @@ class CredentialVaultTest extends TestCase
         $app = $this->app();
         $credential = $this->vault()->put($app, 'woocommerce', $this->wooValues(), null);
 
-        // Enough to answer "is this the key I pasted?", not enough to help
-        // anyone reconstruct the rest.
         $this->assertSame('…3456', $credential->hint);
     }
-
-    /* --- Context binding: the substitution attack ------------------------ */
 
     #[Test]
     public function a_ciphertext_moved_to_another_credential_will_not_decrypt(): void
     {
-        // The attack encryption alone does not stop: lift a ciphertext from one
-        // row and paste it into another you control. The authenticated context
-        // binds each ciphertext to its own tenant, app, credential and type.
+
         $victim = $this->app();
         $attacker = $this->app();
 
@@ -114,8 +99,6 @@ class CredentialVaultTest extends TestCase
         $app = $this->app();
         $credential = $this->vault()->put($app, 'woocommerce', $this->wooValues(), null);
 
-        // AES-GCM authenticates. A flipped bit must fail loudly, not decrypt to
-        // nonsense that some later line of code then trusts.
         $raw = base64_decode($credential->ciphertext, true);
         $raw[40] = $raw[40] === 'a' ? 'b' : 'a';
         $credential->forceFill(['ciphertext' => base64_encode($raw)])->save();
@@ -127,8 +110,7 @@ class CredentialVaultTest extends TestCase
     #[Test]
     public function every_write_uses_a_fresh_data_key(): void
     {
-        // Rotating a credential must rotate the key protecting it, or the old
-        // secret and its replacement sit under the same key.
+
         $app = $this->app();
 
         $first = $this->vault()->put($app, 'woocommerce', $this->wooValues(), null);
@@ -142,15 +124,12 @@ class CredentialVaultTest extends TestCase
     #[Test]
     public function the_same_secret_encrypts_differently_every_time(): void
     {
-        // A deterministic ciphertext would leak that two customers use the same
-        // key, and would mean a reused GCM nonce — which breaks GCM outright.
+
         $one = $this->vault()->put($this->app(), 'woocommerce', $this->wooValues(), null);
         $two = $this->vault()->put($this->app(), 'woocommerce', $this->wooValues(), null);
 
         $this->assertNotSame($one->ciphertext, $two->ciphertext);
     }
-
-    /* --- Auditing -------------------------------------------------------- */
 
     #[Test]
     public function every_reveal_is_recorded_with_its_purpose(): void
@@ -171,8 +150,7 @@ class CredentialVaultTest extends TestCase
     #[Test]
     public function a_failed_reveal_is_recorded_too(): void
     {
-        // The more interesting of the two records: this is what an attack looks
-        // like, and an investigation starts from it.
+
         $app = $this->app();
         $credential = $this->vault()->put($app, 'woocommerce', $this->wooValues(), null);
         $credential->forceFill(['wrapped_key' => base64_encode(random_bytes(60))])->save();
@@ -180,7 +158,7 @@ class CredentialVaultTest extends TestCase
         try {
             $this->vault()->reveal($credential->fresh(), 'test: broken key');
         } catch (VaultException) {
-            // expected
+
         }
 
         $this->assertDatabaseHas('credential_accesses', [
@@ -192,7 +170,7 @@ class CredentialVaultTest extends TestCase
     #[Test]
     public function a_reveal_without_a_stated_purpose_is_refused(): void
     {
-        // "Why was this secret read?" has to be answerable six months later.
+
         $credential = $this->vault()->put($this->app(), 'woocommerce', $this->wooValues(), null);
 
         $this->expectException(VaultException::class);
@@ -220,20 +198,17 @@ class CredentialVaultTest extends TestCase
             $record->update(['action' => 'nothing']);
             $this->fail('an access record was modified');
         } catch (\RuntimeException) {
-            // expected
+
         }
 
         $this->expectException(\RuntimeException::class);
         $record->delete();
     }
 
-    /* --- Destruction ------------------------------------------------------ */
-
     #[Test]
     public function forgetting_a_credential_destroys_the_key_that_opens_it(): void
     {
-        // Crypto-shredding: the wrapped data key goes with the row, so the
-        // ciphertext is unrecoverable even from a backup taken a moment ago.
+
         $app = $this->app();
         $credential = $this->vault()->put($app, 'woocommerce', $this->wooValues(), null);
         $ciphertext = $credential->ciphertext;
@@ -242,7 +217,7 @@ class CredentialVaultTest extends TestCase
 
         $this->assertDatabaseCount('app_credentials', 0);
         $this->assertDatabaseHas('credential_accesses', ['action' => 'deleted']);
-        // The audit record survives the thing it describes.
+
         $this->assertNotEmpty($ciphertext);
     }
 
@@ -255,11 +230,9 @@ class CredentialVaultTest extends TestCase
         $app->forceDelete();
 
         $this->assertDatabaseCount('app_credentials', 0);
-        // ...but not the record that they existed.
+
         $this->assertDatabaseHas('credential_accesses', ['action' => 'created']);
     }
-
-    /* --- Serialisation ---------------------------------------------------- */
 
     #[Test]
     public function key_material_never_survives_serialisation(): void
@@ -270,8 +243,6 @@ class CredentialVaultTest extends TestCase
         $this->assertStringNotContainsString('ciphertext', $json);
         $this->assertStringNotContainsString('wrapped_key', $json);
 
-        // `dd()` and exception contexts print debug info, and that is exactly
-        // where secrets escape from.
         $debug = print_r($credential->__debugInfo(), true);
         $this->assertStringContainsString('[redacted]', $debug);
     }

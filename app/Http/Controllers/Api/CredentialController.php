@@ -13,16 +13,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
-/**
- * Setting a customer's shop credentials.
- *
- * **There is no endpoint that returns a secret, and there will not be one.**
- * Nobody in the panel needs to read a key back — they need to know one is set,
- * whether it is the right one (the hint), and to be able to replace it. A
- * "reveal" button is a screenshot waiting to happen, a support-call
- * read-it-out-to-me waiting to happen, and a browser-history entry waiting to
- * happen. Decryption belongs to the proxy and the build worker.
- */
 class CredentialController extends Controller
 {
     public function __construct(
@@ -30,7 +20,6 @@ class CredentialController extends Controller
         private readonly KeyManagement $keys,
     ) {}
 
-    /** Metadata only: which are set, what they end in, when last used. */
     public function index(Request $request, string $app): JsonResponse
     {
         $model = $this->findOwned($request, $app);
@@ -59,9 +48,7 @@ class CredentialController extends Controller
         return response()->json([
             'data' => [
                 'credentials' => $types,
-                // Surfaced so an operator can see at a glance that development
-                // key management is in use. Silently protecting real keys with
-                // a development key is the failure this is here to prevent.
+
                 'keyProvider' => $this->keys->describe(),
                 'productionGrade' => $this->keys->isProductionGrade(),
             ],
@@ -76,9 +63,6 @@ class CredentialController extends Controller
             abort(404);
         }
 
-        // Every declared field is required and must be a non-empty string. A
-        // half-set credential fails at the worst possible moment — mid-build,
-        // or mid-checkout for someone's customer.
         $rules = [];
         foreach (CredentialType::fields($type) as $field) {
             $rules[$field] = ['required', 'string', 'min:1', 'max:8000'];
@@ -98,9 +82,7 @@ class CredentialController extends Controller
                 $label,
             );
         } catch (VaultException $exception) {
-            // Never echo the exception message to the client: vault errors are
-            // deliberately vague, and passing them through would only ever help
-            // someone probing.
+
             report($exception);
 
             throw ValidationException::withMessages([

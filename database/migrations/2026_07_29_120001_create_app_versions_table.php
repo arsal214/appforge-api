@@ -4,15 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/**
- * Immutable published snapshots.
- *
- * A version is what a shell on a customer's phone actually downloads. Once it
- * exists it is never edited — if it were, "the app my customer is running" would
- * be a moving target and a rollback would have nothing to roll back to. There
- * is deliberately no `updated_at`: the absence of the column is the cheapest
- * possible enforcement of that rule.
- */
 return new class extends Migration
 {
     public function up(): void
@@ -31,8 +22,6 @@ return new class extends Migration
                 ->references('id')->on('apps')
                 ->cascadeOnDelete();
 
-            // Two concurrent publishes must not both become version 4. The
-            // database decides, not a read-then-write in PHP.
             $table->unique(['app_id', 'version']);
         });
     }

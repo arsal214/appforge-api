@@ -20,8 +20,6 @@ class PushTest extends TestCase
         return App::factory()->create(['organization_id' => $user->organization_id]);
     }
 
-    /* --- Device registration: unauthenticated, so the surface matters ---- */
-
     #[Test]
     public function a_phone_can_register_without_authentication(): void
     {
@@ -38,8 +36,7 @@ class PushTest extends TestCase
     #[Test]
     public function registering_the_same_device_twice_updates_one_row(): void
     {
-        // A retry loop in a shell must not be able to inflate an audience count
-        // or fill a disk.
+
         $app = App::factory()->for(Organization::factory())->create();
         $token = str_repeat('b', 64);
 
@@ -67,12 +64,9 @@ class PushTest extends TestCase
             'platform' => 'android',
         ]);
 
-        // Identical in status and body, so calling it teaches an attacker
-        // nothing about which ids are real.
         $this->assertSame($known->getStatusCode(), $invented->getStatusCode());
         $this->assertSame($known->getContent(), $invented->getContent());
 
-        // ...and the invented one stored nothing.
         $this->assertDatabaseCount('app_devices', 1);
     }
 
@@ -86,8 +80,6 @@ class PushTest extends TestCase
             'platform' => 'windows',
         ])->assertStatus(422);
     }
-
-    /* --- Campaigns ------------------------------------------------------- */
 
     #[Test]
     public function a_campaign_can_be_composed_and_scheduled(): void
@@ -109,9 +101,7 @@ class PushTest extends TestCase
     #[Test]
     public function a_notification_cannot_carry_an_action_the_app_does_not_have(): void
     {
-        // Tapping a notification runs an SDUI action, so the payload is held to
-        // the same closed vocabulary as a config. A push must not be able to
-        // introduce behaviour the shell does not already implement.
+
         $user = User::factory()->create();
         $app = $this->ownApp($user);
 
@@ -140,9 +130,7 @@ class PushTest extends TestCase
     #[Test]
     public function sending_reports_honestly_that_nothing_was_delivered(): void
     {
-        // Delivery needs APNs and FCM credentials that do not exist. Recording a
-        // delivery that did not happen would put a number in the panel a
-        // customer would reasonably act on.
+
         $user = User::factory()->create();
         $app = $this->ownApp($user);
         AppDevice::create([
@@ -179,8 +167,6 @@ class PushTest extends TestCase
             'sent_at' => now(),
         ]);
 
-        // Deleting the record would not unsend it — it would only remove our
-        // ability to answer "what did you send me?" when someone asks.
         $this->actingAs($user)
             ->deleteJson("/api/apps/{$app->id}/push/{$campaign->id}")
             ->assertStatus(422);
@@ -206,7 +192,7 @@ class PushTest extends TestCase
     #[Test]
     public function the_audience_endpoint_says_delivery_is_not_configured(): void
     {
-        // The panel must not show a Send button that quietly does nothing.
+
         $user = User::factory()->create();
         $app = $this->ownApp($user);
 
@@ -230,8 +216,6 @@ class PushTest extends TestCase
             'platform' => 'ios',
         ]);
 
-        // A push token is a handle on a specific person's phone. The panel needs
-        // counts, not identities.
         $audience = $this->actingAs($user)->getJson("/api/apps/{$app->id}/push/audience");
         $campaigns = $this->actingAs($user)->getJson("/api/apps/{$app->id}/push");
 
