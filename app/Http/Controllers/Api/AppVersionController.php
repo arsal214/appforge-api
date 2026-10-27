@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\AppVersionResource;
+use App\Http\Resources\Iso8601;
 use App\Models\App as ClientApp;
 use App\Models\AppVersion;
 use App\Support\Config\ConfigValidator;
@@ -55,6 +56,47 @@ class AppVersionController extends Controller
         }
 
         return (new AppVersionResource($version))->response()->setStatusCode(201);
+    }
+
+    /**
+     * Puts a published version back into the draft.
+     *
+     * The config is re-validated on the way in even though it passed on the way
+     * out: a version can predate a contract change, and restoring one that the
+     * current shell can no longer render would be a broken app the customer
+     * cannot see until it ships. Refusing it names the field instead.
+     */
+    public function restore(Request $request, string $app, string $version): JsonResponse
+    {
+        $model = $this->findOwned($request, $app);
+
+        $snapshot = $model->versions()->where('version', (int) $version)->firstOrFail();
+
+        $errors = (new ConfigValidator)->validate($snapshot->config);
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        $record = $model->config()->updateOrCreate(
+            ['app_id' => $model->id],
+            [
+                'schema_version' => Contract::SCHEMA_VERSION,
+                'config' => $snapshot->config,
+                'updated_by' => $request->user()->getKey(),
+            ],
+        );
+
+        if ($model->status === 'rejected') {
+            $model->update(['status' => 'draft']);
+        }
+
+        return response()->json([
+            'data' => [
+                'config' => $record->config,
+                'schemaVersion' => $record->schema_version,
+                'updatedAt' => Iso8601::from($record->updated_at),
+            ],
+        ]);
     }
 
     private function createNextVersion(ClientApp $app, array $config, ?string $notes, string $userId): AppVersion

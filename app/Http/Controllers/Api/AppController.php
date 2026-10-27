@@ -23,6 +23,19 @@ class AppController extends Controller
         );
     }
 
+    /**
+     * Apps the customer has deleted.
+     *
+     * `onlyTrashed` drops the soft-delete scope and nothing else, so the
+     * organisation scope still applies and another tenant's bin stays invisible.
+     */
+    public function trashed(Request $request): AnonymousResourceCollection
+    {
+        return AppResource::collection(
+            $this->apps($request)->onlyTrashed()->latest('deleted_at')->get()
+        );
+    }
+
     public function store(StoreAppRequest $request): JsonResponse
     {
 
@@ -80,6 +93,14 @@ class AppController extends Controller
         $model->delete();
 
         return response()->json(['data' => null], 200);
+    }
+
+    public function restore(Request $request, string $app): AppResource
+    {
+        $model = $this->apps($request)->onlyTrashed()->findOrFail($app);
+        $model->restore();
+
+        return new AppResource($model);
     }
 
     private function apps(Request $request): HasMany
