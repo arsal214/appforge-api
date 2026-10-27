@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\App;
+use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -196,6 +197,72 @@ class AppsTest extends TestCase
 
         $this->assertSoftDeleted('apps', ['id' => $app->id]);
         $this->actingAs($user)->getJson("/api/apps/{$app->id}")->assertNotFound();
+    }
+
+    #[Test]
+    public function a_deleted_app_is_in_the_bin_and_not_in_the_list(): void
+    {
+        $user = User::factory()->create();
+        $kept = App::factory()->create(['organization_id' => $user->organization_id]);
+        $binned = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)->deleteJson("/api/apps/{$binned->id}")->assertOk();
+
+        $listed = $this->actingAs($user)->getJson('/api/apps')->assertOk()->json('data');
+        $this->assertSame([$kept->id], array_column($listed, 'id'));
+
+        $bin = $this->actingAs($user)->getJson('/api/apps/trashed')->assertOk()->json('data');
+        $this->assertSame([$binned->id], array_column($bin, 'id'));
+    }
+
+    #[Test]
+    public function a_deleted_app_can_be_brought_back(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}")->assertOk();
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/{$app->id}/restore")
+            ->assertOk()
+            ->assertJsonPath('data.id', $app->id);
+
+        $this->assertDatabaseHas('apps', ['id' => $app->id, 'deleted_at' => null]);
+        $this->actingAs($user)->getJson("/api/apps/{$app->id}")->assertOk();
+
+        $bin = $this->actingAs($user)->getJson('/api/apps/trashed')->assertOk()->json('data');
+        $this->assertSame([], $bin);
+    }
+
+    #[Test]
+    public function an_app_that_was_never_deleted_cannot_be_restored(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)->postJson("/api/apps/{$app->id}/restore")->assertNotFound();
+    }
+
+    #[Test]
+    public function another_organisations_bin_is_invisible(): void
+    {
+        $user = User::factory()->create();
+        $other = Organization::factory()->create();
+        $theirs = App::factory()->for($other)->create();
+        $theirs->delete();
+
+        $bin = $this->actingAs($user)->getJson('/api/apps/trashed')->assertOk()->json('data');
+        $this->assertSame([], $bin);
+
+        $this->actingAs($user)->postJson("/api/apps/{$theirs->id}/restore")->assertNotFound();
+        $this->assertSoftDeleted('apps', ['id' => $theirs->id]);
+    }
+
+    #[Test]
+    public function the_bin_needs_a_login(): void
+    {
+        $this->getJson('/api/apps/trashed')->assertUnauthorized();
     }
 
     #[Test]

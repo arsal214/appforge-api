@@ -68,6 +68,36 @@ There are two independent mechanisms and they are not redundant:
 query the customer is not entitled to make — write it in `appforge-admin`,
 where crossing tenants is the explicit job and is audited.
 
+## Roles — the other axis
+
+Tenancy decides *whose* records you can reach. Roles decide what you may do
+with your own organisation's, and they are a different mechanism with a
+different status code: **403, not 404**. The record belongs to the caller;
+pretending it is missing would send them hunting for a bug instead of asking
+the owner for a different role.
+
+| | owner | editor | staff |
+|---|---|---|---|
+| read apps, analytics and orders | yes | yes | yes |
+| work orders — move one through its statuses | yes | yes | yes |
+| build — configs, versions, credentials, push, profiles, delete an app | yes | yes | no |
+| the team, and the organisation's own settings | yes | no | no |
+
+The table lives once, in `User::ABILITIES`, and is applied by the `allow:`
+middleware on the route. `appforge-web/src/lib/roles.ts` is a second copy used
+only to decide which links are worth showing — if the two drift, the panel
+offers a button that 403s, which is the direction that fails safely.
+
+There is exactly one owner per organisation: the account that registered.
+An invitation cannot create another, and the owner cannot be re-roled or
+removed through this API, because the only safe version of that is an account
+transfer with a human in the loop.
+
+An invitation is a link the owner passes on themselves. Only its SHA-256 hash
+is stored, so the link cannot be recovered from the database — reissuing it
+replaces the invite. There is no mail pipeline in this product yet, and a
+feature that silently depends on one is worse than one that admits it.
+
 ## Identifiers
 
 Primary keys are prefixed ULIDs in `char(30)`: `app_01kypsqmjnk5yr520xrxem7g1e`.

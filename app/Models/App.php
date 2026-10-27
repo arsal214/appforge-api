@@ -70,6 +70,11 @@ class App extends Model
         return $this->hasMany(AppDevice::class);
     }
 
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
     public function credentials(): HasMany
     {
         return $this->hasMany(AppCredential::class);

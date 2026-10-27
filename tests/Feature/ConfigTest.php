@@ -377,4 +377,92 @@ class ConfigTest extends TestCase
         $this->actingAs($user)->putJson("/api/apps/{$app->id}/versions/1")->assertNotFound();
         $this->actingAs($user)->deleteJson("/api/apps/{$app->id}/versions/1")->assertNotFound();
     }
+
+    #[Test]
+    public function restoring_a_version_puts_it_back_into_the_draft(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()])
+            ->assertOk();
+        $this->actingAs($user)->postJson("/api/apps/{$app->id}/versions")->assertCreated();
+
+        $wrecked = $this->config([
+            'app' => ['name' => 'Wrecked', 'slug' => 'wrecked'],
+        ]);
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $wrecked])
+            ->assertOk();
+        $this->assertSame('Wrecked', $app->fresh()->config->config['app']['name']);
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/{$app->id}/versions/1/restore")
+            ->assertOk()
+            ->assertJsonPath('data.config.app.name', 'Sams Pizza');
+
+        $this->assertSame('Sams Pizza', $app->fresh()->config->config['app']['name']);
+    }
+
+    #[Test]
+    public function restoring_does_not_consume_the_version_it_restored(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $this->actingAs($user)->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()]);
+        $this->actingAs($user)->postJson("/api/apps/{$app->id}/versions")->assertCreated();
+
+        $this->actingAs($user)->postJson("/api/apps/{$app->id}/versions/1/restore")->assertOk();
+
+        $this->assertCount(1, $app->fresh()->versions);
+        $this->assertSame(1, $app->fresh()->versions->first()->version);
+    }
+
+    #[Test]
+    public function a_version_that_was_never_published_cannot_be_restored(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/{$app->id}/versions/7/restore")
+            ->assertNotFound();
+    }
+
+    #[Test]
+    public function another_organisations_version_cannot_be_restored(): void
+    {
+        $user = User::factory()->create();
+        $theirs = App::factory()->for(Organization::factory())->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/{$theirs->id}/versions/1/restore")
+            ->assertNotFound();
+    }
+
+    #[Test]
+    public function restoring_a_version_the_contract_has_outgrown_is_refused(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $this->actingAs($user)->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()]);
+        $this->actingAs($user)->postJson("/api/apps/{$app->id}/versions")->assertCreated();
+
+        // A section type a later contract removed. The snapshot is stored as it
+        // was, so the only place this can be caught is on the way back in.
+        $stale = $this->config();
+        $stale['screens'][0]['sections'][0]['type'] = 'retired_block';
+
+        $version = $app->versions()->first();
+        $version->update(['config' => $stale]);
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/{$app->id}/versions/1/restore")
+            ->assertStatus(422);
+
+        $this->assertSame('Sams Pizza', $app->fresh()->config->config['app']['name']);
+    }
 }

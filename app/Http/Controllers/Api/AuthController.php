@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AcceptInviteRequest;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
 use App\Http\Resources\OrganizationResource;
 use App\Http\Resources\UserResource;
 use App\Models\Organization;
+use App\Models\OrganizationInvite;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,6 +33,7 @@ class AuthController extends Controller
                 'name' => trim($request->validated('name')),
                 'email' => $request->validated('email'),
                 'password' => $request->validated('password'),
+                'role' => 'owner',
             ]);
 
             return [$user, $organization];
@@ -57,6 +60,48 @@ class AuthController extends Controller
         RateLimiter::clear($this->throttleKey($request));
 
         return $this->session($user, $user->organization);
+    }
+
+    public function invite(string $token): JsonResponse
+    {
+        $invite = $this->openInvite($token);
+
+        return response()->json([
+            'data' => [
+                'organizationName' => $invite->organization->name,
+                'email' => $invite->email,
+                'role' => $invite->role,
+            ],
+        ]);
+    }
+
+    public function acceptInvite(AcceptInviteRequest $request, string $token): JsonResponse
+    {
+        $invite = $this->openInvite($token);
+
+        // Another organisation can hold an open invite for the same address,
+        // and only the first one accepted can have it: users.email is unique
+        // product-wide. Without this the insert would fail as a 500.
+        if (User::where('email', $invite->email)->exists()) {
+            throw ValidationException::withMessages([
+                'email' => ['That email address already has an AppForge account. Sign in instead.'],
+            ]);
+        }
+
+        $user = DB::transaction(function () use ($invite, $request) {
+            $user = $invite->organization->users()->create([
+                'name' => trim($request->validated('name')),
+                'email' => $invite->email,
+                'password' => $request->validated('password'),
+                'role' => $invite->role,
+            ]);
+
+            $invite->update(['accepted_at' => now()]);
+
+            return $user;
+        });
+
+        return $this->session($user, $invite->organization, 201);
     }
 
     public function logout(Request $request): JsonResponse
@@ -88,6 +133,21 @@ class AuthController extends Controller
                 'organization' => new OrganizationResource($organization),
             ],
         ], $status);
+    }
+
+    private function openInvite(string $token): OrganizationInvite
+    {
+        $invite = OrganizationInvite::where('token_hash', OrganizationInvite::hash($token))->first();
+
+        abort_if($invite === null, 404, 'That invitation link is not valid.');
+
+        abort_unless(
+            $invite->isOpen(),
+            404,
+            'That invitation has expired or has already been used. Ask for a new one.',
+        );
+
+        return $invite;
     }
 
     private function ensureNotRateLimited(LoginRequest $request): void

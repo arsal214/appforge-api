@@ -17,6 +17,7 @@ class UserResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
+            'role' => $this->role,
             'organizationId' => $this->organization_id,
             'createdAt' => Iso8601::from($this->created_at),
         ];
