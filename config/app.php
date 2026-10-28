@@ -1,7 +1,6 @@
 <?php
 
 return [
-
     'name' => env('APP_NAME', 'Laravel'),
 
     'env' => env('APP_ENV', 'production'),
@@ -9,6 +8,11 @@ return [
     'debug' => (bool) env('APP_DEBUG', false),
 
     'url' => env('APP_URL', 'http://localhost'),
+
+    'frontend_url' => trim(explode(
+        ',',
+        (string) env('FRONTEND_URL', 'http://localhost:3000'),
+    )[0]),
 
     'timezone' => 'UTC',
 

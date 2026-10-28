@@ -245,6 +245,97 @@ class AppsTest extends TestCase
     }
 
     #[Test]
+    public function an_app_in_the_bin_can_be_destroyed_for_good(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $app->config()->create([
+            'schema_version' => 1,
+            'config' => ['schemaVersion' => 1],
+            'updated_by' => $user->id,
+        ]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", [
+            'lines' => [['itemId' => 'i', 'title' => 'Pizza', 'quantity' => 1]],
+            'total' => null,
+            'details' => [],
+        ])->assertCreated();
+
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}")->assertOk();
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}/permanently")->assertOk();
+
+        $this->assertDatabaseMissing('apps', ['id' => $app->id]);
+
+        $this->assertDatabaseMissing('app_configs', ['app_id' => $app->id]);
+        $this->assertDatabaseMissing('orders', ['app_id' => $app->id]);
+
+        $this->assertSame([], $this->actingAs($user)->getJson('/api/apps/trashed')->json('data'));
+    }
+
+    #[Test]
+    public function an_app_has_to_be_in_the_bin_before_it_can_be_destroyed(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)
+            ->deleteJson("/api/apps/{$app->id}/permanently")
+            ->assertNotFound();
+
+        $this->assertDatabaseHas('apps', ['id' => $app->id, 'deleted_at' => null]);
+    }
+
+    #[Test]
+    public function a_live_app_can_never_be_destroyed_because_it_cannot_reach_the_bin(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->live()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}")->assertStatus(422);
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}/permanently")->assertNotFound();
+
+        $this->assertDatabaseHas('apps', ['id' => $app->id, 'deleted_at' => null]);
+    }
+
+    #[Test]
+    public function another_organisations_app_cannot_be_destroyed(): void
+    {
+        $user = User::factory()->create();
+        $other = Organization::factory()->create();
+        $theirs = App::factory()->for($other)->create();
+        $theirs->delete();
+
+        $this->actingAs($user)
+            ->deleteJson("/api/apps/{$theirs->id}/permanently")
+            ->assertNotFound();
+
+        $this->assertSoftDeleted('apps', ['id' => $theirs->id]);
+    }
+
+    #[Test]
+    public function destroying_an_app_keeps_the_record_of_who_touched_its_secrets(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)->putJson("/api/apps/{$app->id}/credentials/woocommerce", [
+            'storeUrl' => 'https://shop.example',
+            'consumerKey' => 'ck_live_key_value_1234',
+            'consumerSecret' => str_repeat('s', 40),
+        ])->assertCreated();
+
+        $this->assertDatabaseCount('credential_accesses', 1);
+
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}")->assertOk();
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}/permanently")->assertOk();
+
+        $this->assertDatabaseMissing('app_credentials', ['app_id' => $app->id]);
+
+        $this->assertDatabaseCount('credential_accesses', 1);
+    }
+
+    #[Test]
     public function another_organisations_bin_is_invisible(): void
     {
         $user = User::factory()->create();
