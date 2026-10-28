@@ -18,6 +18,7 @@ class OrderResource extends JsonResource
             'appId' => $this->app_id,
             'number' => $this->number,
             'status' => $this->status,
+            'test' => $this->is_test,
             'lines' => $this->lines,
             'details' => $this->details,
             'total' => $this->total,

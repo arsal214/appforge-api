@@ -26,21 +26,43 @@ class OrderController extends Controller
 
         abort_unless($exists, 404, 'That app is not available.');
 
-        $order = DB::transaction(function () use ($request, $app) {
-            $taken = (int) Order::where('app_id', $app)->lockForUpdate()->max('number');
+        $order = $this->record($app, $request, test: false);
+
+        return response()->json(['data' => ['number' => $order->number]], 201);
+    }
+
+    public function storeTest(StoreOrderRequest $request, string $app): JsonResponse
+    {
+        $model = $this->findOwned($request, $app);
+
+        $order = $this->record($model->getKey(), $request, test: true);
+
+        return (new OrderResource($order))->response()->setStatusCode(201);
+    }
+
+    public function clearTests(Request $request, string $app): JsonResponse
+    {
+        $this->findOwned($request, $app)->orders()->where('is_test', true)->delete();
+
+        return response()->json(['data' => null]);
+    }
+
+    private function record(string $appId, StoreOrderRequest $request, bool $test): Order
+    {
+        return DB::transaction(function () use ($appId, $request, $test) {
+            $taken = (int) Order::where('app_id', $appId)->lockForUpdate()->max('number');
 
             return Order::create([
-                'app_id' => $app,
+                'app_id' => $appId,
                 'number' => $taken + 1,
                 'status' => 'new',
+                'is_test' => $test,
                 'lines' => $request->validated('lines'),
                 'details' => $request->validated('details'),
                 'total' => $request->validated('total'),
                 'platform' => $request->validated('platform'),
             ]);
         });
-
-        return response()->json(['data' => ['number' => $order->number]], 201);
     }
 
     public function index(Request $request, string $app): AnonymousResourceCollection
