@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PublicConfigController;
 use App\Http\Controllers\Api\PushCampaignController;
 use App\Http\Controllers\Api\TeamController;
@@ -20,13 +21,15 @@ use App\Http\Controllers\Api\UploadController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
-
     Route::middleware('throttle:20,1')->group(function () {
         Route::post('register', [AuthController::class, 'register']);
         Route::post('login', [AuthController::class, 'login']);
 
         Route::get('invites/{token}', [AuthController::class, 'invite']);
         Route::post('invites/{token}', [AuthController::class, 'acceptInvite']);
+
+        Route::post('forgot-password', [PasswordResetController::class, 'forgot']);
+        Route::post('reset-password', [PasswordResetController::class, 'reset']);
     });
 
     Route::middleware('auth:sanctum')->group(function () {
@@ -57,6 +60,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('apps/{app}', [AppController::class, 'update'])->middleware('allow:build');
     Route::delete('apps/{app}', [AppController::class, 'destroy'])->middleware('allow:build');
     Route::post('apps/{app}/restore', [AppController::class, 'restore'])->middleware('allow:build');
+    Route::delete('apps/{app}/permanently', [AppController::class, 'forceDestroy'])->middleware('allow:build');
 
     Route::get('apps/{app}/config', [AppConfigController::class, 'show']);
     Route::put('apps/{app}/config', [AppConfigController::class, 'update'])->middleware('allow:build');
@@ -80,6 +84,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('apps/{app}/analytics', [AnalyticsController::class, 'show']);
 
     Route::get('apps/{app}/orders', [OrderController::class, 'index']);
+
+    Route::post('apps/{app}/orders/test', [OrderController::class, 'storeTest'])
+        ->middleware('allow:build');
+    Route::delete('apps/{app}/orders/test', [OrderController::class, 'clearTests'])
+        ->middleware('allow:build');
+
     Route::patch('apps/{app}/orders/{order}', [OrderController::class, 'update']);
 
     Route::post('uploads', [UploadController::class, 'store'])
