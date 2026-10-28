@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['app_id', 'number', 'status', 'lines', 'details', 'total', 'platform'])]
+#[Fillable(['app_id', 'number', 'status', 'is_test', 'lines', 'details', 'total', 'platform'])]
 class Order extends Model
 {
     use HasPrefixedUlid;
@@ -22,6 +22,7 @@ class Order extends Model
     protected function casts(): array
     {
         return [
+            'is_test' => 'boolean',
             'lines' => 'array',
             'details' => 'array',
         ];
