@@ -22,10 +22,7 @@ class CredentialVault
             throw new VaultException("Unknown credential type [{$type}].");
         }
 
-        $existing = AppCredential::query()
-            ->where('app_id', $app->id)
-            ->where('type', $type)
-            ->first();
+        $existing = $app->credentials()->where('type', $type)->first();
 
         $credential = $existing ?? new AppCredential;
         $credential->id ??= $credential->newUniqueId();
@@ -90,7 +87,6 @@ class CredentialVault
                 $context,
             );
         } catch (VaultException $exception) {
-
             $this->record($credential, 'reveal_failed', $actorType, $actorId, $purpose);
 
             throw $exception;
@@ -106,7 +102,6 @@ class CredentialVault
 
     public function forget(AppCredential $credential, ?string $actorId): void
     {
-
         $this->record($credential, 'deleted', 'user', $actorId);
 
         $credential->delete();

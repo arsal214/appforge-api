@@ -69,7 +69,7 @@ class OrdersTest extends TestCase
 
         $this->assertCount(1, $data);
         $this->assertEqualsCanonicalizing([
-            'id', 'appId', 'number', 'status', 'lines', 'details',
+            'id', 'appId', 'number', 'status', 'test', 'lines', 'details',
             'total', 'platform', 'createdAt', 'updatedAt',
         ], array_keys($data[0]));
 
@@ -107,7 +107,7 @@ class OrdersTest extends TestCase
         $app = App::factory()->create(['organization_id' => $user->organization_id]);
         $url = "/api/public/apps/{$app->id}/orders";
 
-        $this->postJson($url, $this->order(['lines' => []]))
+        $this->postJson($url, $this->order(['lines' => [], 'details' => []]))
             ->assertStatus(422)->assertJsonValidationErrors(['lines']);
 
         $this->postJson($url, $this->order([
@@ -154,6 +154,144 @@ class OrdersTest extends TestCase
         $this->assertSame([], $data['details']);
         $this->assertNull($data['total']);
         $this->assertNull($data['platform']);
+    }
+
+    #[Test]
+    public function an_appointment_business_sends_a_request_with_no_basket(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", [
+            'lines' => [],
+            'total' => null,
+            'details' => [
+                ['label' => 'Service', 'value' => 'Haircut', 'kind' => 'line'],
+                ['label' => 'When suits you', 'value' => 'Tuesday afternoon', 'kind' => 'line'],
+                ['label' => 'Phone', 'value' => '+44 7700 900123', 'kind' => 'phone'],
+            ],
+            'platform' => 'ios',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.number', 1);
+
+        $data = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->json('data.0');
+
+        $this->assertSame([], $data['lines']);
+        $this->assertNull($data['total']);
+        $this->assertCount(3, $data['details']);
+        $this->assertSame('new', $data['status']);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())
+            ->assertCreated()
+            ->assertJsonPath('data.number', 2);
+    }
+
+    #[Test]
+    public function the_owner_can_send_themselves_a_test_order_from_the_preview(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $data = $this->actingAs($user)
+            ->postJson("/api/apps/{$app->id}/orders/test", $this->order())
+            ->assertCreated()
+            ->json('data');
+
+        $this->assertTrue($data['test'], 'a test order has to say so');
+        $this->assertSame(1, $data['number']);
+        $this->assertSame('Margherita', $data['lines'][0]['title']);
+
+        $listed = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->json('data');
+
+        $this->assertCount(1, $listed);
+        $this->assertTrue($listed[0]['test']);
+    }
+
+    #[Test]
+    public function a_real_order_is_never_marked_as_a_test(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())
+            ->assertCreated();
+
+        $this->assertFalse(
+            $this->actingAs($user)->getJson("/api/apps/{$app->id}/orders")->json('data.0.test'),
+            'an order somebody is waiting on must not be dismissable as a test',
+        );
+    }
+
+    #[Test]
+    public function clearing_tests_leaves_the_real_orders_alone(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())->assertCreated();
+        $this->actingAs($user)
+            ->postJson("/api/apps/{$app->id}/orders/test", $this->order())
+            ->assertCreated();
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())->assertCreated();
+
+        $this->actingAs($user)->deleteJson("/api/apps/{$app->id}/orders/test")->assertOk();
+
+        $left = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->json('data');
+
+        $this->assertSame([3, 1], array_column($left, 'number'));
+        $this->assertSame([false, false], array_column($left, 'test'));
+    }
+
+    #[Test]
+    public function only_someone_who_can_build_may_send_or_clear_a_test(): void
+    {
+        $owner = User::factory()->create();
+        $staff = User::factory()->create([
+            'organization_id' => $owner->organization_id,
+            'role' => 'staff',
+        ]);
+        $app = App::factory()->create(['organization_id' => $owner->organization_id]);
+
+        $this->actingAs($staff)
+            ->postJson("/api/apps/{$app->id}/orders/test", $this->order())
+            ->assertForbidden();
+
+        $this->actingAs($staff)
+            ->deleteJson("/api/apps/{$app->id}/orders/test")
+            ->assertForbidden();
+    }
+
+    #[Test]
+    public function another_organisation_cannot_send_a_test_into_your_app(): void
+    {
+        $user = User::factory()->create();
+        $other = Organization::factory()->create();
+        $theirs = App::factory()->for($other)->create();
+
+        $this->actingAs($user)
+            ->postJson("/api/apps/{$theirs->id}/orders/test", $this->order())
+            ->assertNotFound();
+
+        $this->assertSame(0, $theirs->orders()->count());
+    }
+
+    #[Test]
+    public function a_test_order_is_refused_without_a_login(): void
+    {
+        $app = App::factory()->create();
+
+        $this->postJson("/api/apps/{$app->id}/orders/test", $this->order())
+            ->assertUnauthorized();
     }
 
     #[Test]

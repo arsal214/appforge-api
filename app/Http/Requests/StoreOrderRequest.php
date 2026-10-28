@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use AppForge\Schema\Contract;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 /**
  * The only unauthenticated write in the product that keeps what it is given, so
@@ -18,7 +19,7 @@ class StoreOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'lines' => ['required', 'array', 'min:1', 'max:'.Contract::limit('maxItems')],
+            'lines' => ['present', 'array', 'max:'.Contract::limit('maxItems')],
             'lines.*.itemId' => ['required', 'string', 'max:64'],
             'lines.*.title' => ['required', 'string', 'max:'.Contract::limit('maxShortText')],
             'lines.*.price' => ['nullable', 'string', 'max:40'],
@@ -32,6 +33,24 @@ class StoreOrderRequest extends FormRequest
             'details.*.kind' => ['nullable', Rule::in(Contract::vocabulary('detailKinds'))],
 
             'platform' => ['nullable', 'in:ios,android'],
+        ];
+    }
+
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                if ($validator->errors()->isNotEmpty()) {
+                    return;
+                }
+
+                if ($this->input('lines') === [] && $this->input('details') === []) {
+                    $validator->errors()->add(
+                        'lines',
+                        'An order needs either something in the basket or some details.',
+                    );
+                }
+            },
         ];
     }
 }

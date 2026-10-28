@@ -38,7 +38,6 @@ class AppController extends Controller
 
     public function store(StoreAppRequest $request): JsonResponse
     {
-
         $template = Templates::find($request->validated('templateId'));
 
         $app = $this->apps($request)->create([
@@ -101,6 +100,14 @@ class AppController extends Controller
         $model->restore();
 
         return new AppResource($model);
+    }
+
+    public function forceDestroy(Request $request, string $app): JsonResponse
+    {
+        $model = $this->apps($request)->onlyTrashed()->findOrFail($app);
+        $model->forceDelete();
+
+        return response()->json(['data' => null], 200);
     }
 
     private function apps(Request $request): HasMany
