@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Iso8601;
 use App\Models\BusinessProfile;
+use App\Support\MediaUrl;
 use App\Support\Profile\BusinessProfileValidator;
 use AppForge\Schema\Contract;
 use Illuminate\Http\JsonResponse;
@@ -51,7 +52,7 @@ class BusinessProfileController extends Controller
 
         $profile = $organization->businessProfiles()->updateOrCreate(
             ['category' => $category],
-            ['data' => $data],
+            ['data' => MediaUrl::forStorage($data)],
         );
 
         return response()->json(['data' => $this->payload($profile)]);
@@ -116,7 +117,7 @@ class BusinessProfileController extends Controller
             'id' => $profile->id,
             'category' => $profile->category,
             'industry' => $profile->industry(),
-            'data' => $profile->data,
+            'data' => MediaUrl::forDelivery($profile->data),
             'updatedAt' => Iso8601::from($profile->updated_at),
         ];
     }

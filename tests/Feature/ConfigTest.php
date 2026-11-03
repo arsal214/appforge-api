@@ -465,4 +465,114 @@ class ConfigTest extends TestCase
 
         $this->assertSame('Sams Pizza', $app->fresh()->config->config['app']['name']);
     }
+
+    #[Test]
+    public function a_save_that_knows_the_current_version_is_accepted(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $first = $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()])
+            ->assertOk();
+
+        $renamed = $this->config();
+        $renamed['app']['name'] = 'Second Save';
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", [
+                'config' => $renamed,
+                'expectedUpdatedAt' => $first->json('data.updatedAt'),
+            ])
+            ->assertOk();
+
+        $this->assertSame('Second Save', $app->fresh()->config->config['app']['name']);
+    }
+
+    #[Test]
+    public function a_save_written_against_a_version_someone_else_replaced_is_refused(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $loaded = $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()])
+            ->json('data.updatedAt');
+
+        $this->travel(2)->seconds();
+
+        $theirs = $this->config();
+        $theirs['app']['name'] = 'Theirs';
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $theirs])
+            ->assertOk();
+
+        $mine = $this->config();
+        $mine['app']['name'] = 'Mine';
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", [
+                'config' => $mine,
+                'expectedUpdatedAt' => $loaded,
+            ])
+            ->assertStatus(409);
+
+        $this->assertSame('Theirs', $app->fresh()->config->config['app']['name']);
+    }
+
+    #[Test]
+    public function a_refused_save_does_not_touch_the_stored_draft_even_when_its_config_is_invalid(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $loaded = $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()])
+            ->json('data.updatedAt');
+
+        $this->travel(2)->seconds();
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $this->config()])
+            ->assertOk();
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", [
+                'config' => ['nonsense' => true],
+                'expectedUpdatedAt' => $loaded,
+            ])
+            ->assertStatus(409);
+
+        $this->assertSame('Sams Pizza', $app->fresh()->config->config['app']['name']);
+    }
+
+    #[Test]
+    public function the_first_save_for_an_app_needs_no_version_to_compare(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", [
+                'config' => $this->config(),
+                'expectedUpdatedAt' => '2020-01-01T00:00:00.000Z',
+            ])
+            ->assertOk();
+
+        $this->assertNotNull($app->fresh()->config);
+    }
+
+    #[Test]
+    public function a_version_that_is_not_a_date_is_refused_as_a_field_error(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", [
+                'config' => $this->config(),
+                'expectedUpdatedAt' => 'whenever',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('expectedUpdatedAt');
+    }
 }

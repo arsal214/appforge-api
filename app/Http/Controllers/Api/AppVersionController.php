@@ -8,6 +8,7 @@ use App\Http\Resources\Iso8601;
 use App\Models\App as ClientApp;
 use App\Models\AppVersion;
 use App\Support\Config\ConfigValidator;
+use App\Support\MediaUrl;
 use AppForge\Schema\Contract;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -92,7 +93,7 @@ class AppVersionController extends Controller
 
         return response()->json([
             'data' => [
-                'config' => $record->config,
+                'config' => MediaUrl::forDelivery($record->config),
                 'schemaVersion' => $record->schema_version,
                 'updatedAt' => Iso8601::from($record->updated_at),
             ],
