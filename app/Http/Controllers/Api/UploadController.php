@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\MediaUrl;
 use AppForge\Schema\Contract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -65,16 +64,7 @@ class UploadController extends Controller
         }
 
         return response()->json([
-            'data' => ['url' => $this->absoluteUrl($path)],
+            'data' => ['url' => MediaUrl::absolute($path)],
         ], 201);
-    }
-
-    private function absoluteUrl(string $path): string
-    {
-        $url = Storage::disk('public')->url($path);
-
-        return str_starts_with($url, 'http://') || str_starts_with($url, 'https://')
-            ? $url
-            : URL::to($url);
     }
 }

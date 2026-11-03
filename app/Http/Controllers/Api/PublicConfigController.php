@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\MediaUrl;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +34,7 @@ class PublicConfigController extends Controller
         }
 
         return response()
-            ->json(['data' => $config])
+            ->json(['data' => MediaUrl::forDelivery($config)])
             ->withHeaders([
 
                 'Cache-Control' => 'public, max-age=60, stale-while-revalidate=600',

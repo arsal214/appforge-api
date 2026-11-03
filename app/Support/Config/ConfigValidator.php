@@ -527,6 +527,12 @@ class ConfigValidator
                 $spec, 'fontSize', $rolePath,
                 Contract::limit('minFontSize'), Contract::limit('maxFontSize'),
             );
+
+            foreach (['marginTop', 'marginRight', 'marginBottom', 'marginLeft'] as $side) {
+                $this->optionalWholeNumber(
+                    $spec, $side, $rolePath, 0, Contract::limit('maxPadding'),
+                );
+            }
         }
     }
 
@@ -1600,6 +1606,15 @@ class ConfigValidator
 
             return;
         }
+
+        if (str_starts_with($value, '/storage/')) {
+            if (! preg_match(Contract::pattern('mediaPath'), $value)) {
+                $this->add($path, 'That is not an image on this site.');
+            }
+
+            return;
+        }
+
         if (! preg_match('#^https?://#i', $value) || filter_var($value, FILTER_VALIDATE_URL) === false) {
             $this->add($path, 'Expected a web address starting with http:// or https://.');
         }
