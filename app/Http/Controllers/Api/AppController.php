@@ -47,6 +47,7 @@ class AppController extends Controller
             'template_id' => $template['id'],
             'industry' => $template['industry'],
             'category' => $request->validated('category'),
+            'business_profile_id' => $request->validated('businessProfileId'),
             'status' => 'draft',
             'accent_color' => $template['accentColor'],
         ]);
@@ -74,6 +75,9 @@ class AppController extends Controller
         }
         if ($request->has('accentColor')) {
             $changes['accent_color'] = $request->validated('accentColor');
+        }
+        if ($request->has('businessProfileId')) {
+            $changes['business_profile_id'] = $request->validated('businessProfileId');
         }
 
         $model->update($changes);
@@ -112,7 +116,14 @@ class AppController extends Controller
 
     private function apps(Request $request): HasMany
     {
-        return $request->user()->organization->apps();
+        return $request->user()->organization->apps()->withCount([
+            'orders as new_orders_count' => fn ($query) => $query
+                ->where('status', 'new')
+                ->where('is_test', false),
+            'orders as new_tests_count' => fn ($query) => $query
+                ->where('status', 'new')
+                ->where('is_test', true),
+        ]);
     }
 
     private function findOwned(Request $request, string $id): ClientApp

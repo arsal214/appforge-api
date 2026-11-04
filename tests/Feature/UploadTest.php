@@ -207,7 +207,9 @@ class UploadTest extends TestCase
         $this->forgetAuthentication();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', [
+            ->postJson('/api/profiles', [
+                'category' => 'restaurant',
+                'name' => 'Sams Pizza',
                 'data' => [
                     'businessName' => 'Sams Pizza',
                     'menuGroups' => [[
@@ -221,7 +223,7 @@ class UploadTest extends TestCase
                     ]],
                 ],
             ])
-            ->assertOk()
+            ->assertCreated()
             ->assertJsonPath('data.data.menuGroups.0.entries.0.imageUrl', $url);
     }
 

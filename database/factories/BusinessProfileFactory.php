@@ -15,6 +15,7 @@ class BusinessProfileFactory extends Factory
         return [
             'organization_id' => Organization::factory(),
             'category' => 'restaurant',
+            'name' => fake()->unique()->company(),
             'data' => [
                 'businessName' => fake()->company(),
             ],
@@ -25,6 +26,7 @@ class BusinessProfileFactory extends Factory
     {
         return $this->state(fn () => [
             'category' => 'restaurant',
+            'name' => 'Sams Pizza',
             'data' => [
                 'businessName' => 'Sams Pizza',
                 'tagline' => 'Fresh pizza, fast',

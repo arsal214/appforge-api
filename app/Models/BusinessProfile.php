@@ -10,8 +10,9 @@ use Illuminate\Database\Eloquent\Attributes\ScopedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['organization_id', 'category', 'data'])]
+#[Fillable(['organization_id', 'category', 'name', 'data'])]
 #[ScopedBy(OrganizationScope::class)]
 class BusinessProfile extends Model
 {
@@ -40,5 +41,10 @@ class BusinessProfile extends Model
     public function organization(): BelongsTo
     {
         return $this->belongsTo(Organization::class);
+    }
+
+    public function apps(): HasMany
+    {
+        return $this->hasMany(App::class, 'business_profile_id');
     }
 }

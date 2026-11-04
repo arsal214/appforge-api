@@ -33,6 +33,13 @@ final class MediaUrl
         );
     }
 
+    public static function reference(string $diskPath): string
+    {
+        return str_starts_with($diskPath, self::PREFIX)
+            ? $diskPath
+            : self::PREFIX.ltrim($diskPath, '/');
+    }
+
     public static function absolute(string $path): string
     {
         return self::base().ltrim(substr($path, 0, strlen(self::PREFIX)) === self::PREFIX

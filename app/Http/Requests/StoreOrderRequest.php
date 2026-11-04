@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Order;
 use AppForge\Schema\Contract;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -32,6 +33,7 @@ class StoreOrderRequest extends FormRequest
             'details.*.value' => ['required', 'string', 'max:'.Contract::limit('maxShortText')],
             'details.*.kind' => ['nullable', Rule::in(Contract::vocabulary('detailKinds'))],
 
+            'kind' => ['nullable', Rule::in(Order::KINDS)],
             'platform' => ['nullable', 'in:ios,android'],
         ];
     }

@@ -124,11 +124,18 @@ class AuthController extends Controller
         ]);
     }
 
+    private static function expiresAt(): ?\DateTimeInterface
+    {
+        $minutes = (int) config('sanctum.idle_minutes');
+
+        return $minutes > 0 ? now()->addMinutes($minutes) : null;
+    }
+
     private function session(User $user, Organization $organization, int $status = 200): JsonResponse
     {
         return response()->json([
             'data' => [
-                'token' => $user->createToken('panel')->plainTextToken,
+                'token' => $user->createToken('panel', ['*'], self::expiresAt())->plainTextToken,
                 'user' => new UserResource($user),
                 'organization' => new OrganizationResource($organization),
             ],

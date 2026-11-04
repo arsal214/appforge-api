@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\App;
+use App\Models\Order;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -69,7 +70,7 @@ class OrdersTest extends TestCase
 
         $this->assertCount(1, $data);
         $this->assertEqualsCanonicalizing([
-            'id', 'appId', 'number', 'status', 'test', 'lines', 'details',
+            'id', 'appId', 'number', 'status', 'kind', 'test', 'lines', 'details',
             'total', 'platform', 'createdAt', 'updatedAt',
         ], array_keys($data[0]));
 
@@ -83,6 +84,60 @@ class OrdersTest extends TestCase
             '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/',
             $data[0]['createdAt'],
         );
+    }
+
+    #[Test]
+    public function a_booking_says_it_is_a_request_even_though_it_has_a_line(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", [
+            'kind' => 'request',
+            'lines' => [
+                ['itemId' => 'svc-colour', 'title' => 'Colour', 'price' => null, 'quantity' => 1],
+            ],
+            'total' => null,
+            'details' => [['label' => 'Name', 'value' => 'Ayesha']],
+        ])->assertCreated();
+
+        $order = Order::firstOrFail();
+
+        $this->assertSame('request', $order->kind);
+        $this->assertSame('Colour', $order->lines[0]['title']);
+    }
+
+    #[Test]
+    public function a_shell_that_does_not_send_a_kind_still_gets_the_old_answer(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", [
+            'lines' => [],
+            'total' => null,
+            'details' => [['label' => 'Name', 'value' => 'Ayesha']],
+        ])->assertCreated();
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())
+            ->assertCreated();
+
+        $this->assertSame(
+            ['request', 'order'],
+            Order::orderBy('number')->pluck('kind')->all(),
+        );
+    }
+
+    #[Test]
+    public function a_kind_nobody_recognises_is_refused(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson(
+            "/api/public/apps/{$app->id}/orders",
+            $this->order(['kind' => 'invoice']),
+        )->assertStatus(422)->assertJsonValidationErrors('kind');
     }
 
     #[Test]
