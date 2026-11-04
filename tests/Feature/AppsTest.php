@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\App;
+use App\Models\BusinessProfile;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,8 +27,9 @@ class AppsTest extends TestCase
 
         $this->assertEqualsCanonicalizing([
             'id', 'organizationId', 'name', 'slug', 'sourceUrl', 'templateId',
-            'industry', 'category', 'status', 'accentColor', 'publishedVersion',
-            'createdAt', 'updatedAt',
+            'industry', 'category', 'businessProfileId', 'status', 'accentColor',
+            'publishedVersion',
+            'newOrders', 'newTests', 'createdAt', 'updatedAt',
         ], array_keys($data));
 
         $this->assertMatchesRegularExpression(
@@ -101,6 +103,77 @@ class AppsTest extends TestCase
         $this->assertSame('sams-pizza', $data['slug']);
         $this->assertNull($data['publishedVersion']);
         $this->assertSame($user->organization_id, $data['organizationId']);
+    }
+
+    #[Test]
+    public function an_app_remembers_which_saved_business_it_is_for(): void
+    {
+        $user = User::factory()->create();
+        $profile = BusinessProfile::factory()->create([
+            'organization_id' => $user->organization_id,
+        ]);
+
+        $data = $this->actingAs($user)->postJson('/api/apps', [
+            'name' => 'Mill Lane',
+            'templateId' => 'tpl_restaurant',
+            'sourceUrl' => null,
+            'category' => 'restaurant',
+            'businessProfileId' => $profile->id,
+        ])->assertCreated()->json('data');
+
+        $this->assertSame($profile->id, $data['businessProfileId']);
+    }
+
+    #[Test]
+    public function an_app_cannot_be_pointed_at_another_organisations_business(): void
+    {
+        $user = User::factory()->create();
+        $theirs = BusinessProfile::factory()->for(Organization::factory())->create();
+
+        $this->actingAs($user)->postJson('/api/apps', [
+            'name' => 'Mill Lane',
+            'templateId' => 'tpl_restaurant',
+            'sourceUrl' => null,
+            'businessProfileId' => $theirs->id,
+        ])->assertStatus(422)->assertJsonValidationErrors('businessProfileId');
+    }
+
+    #[Test]
+    public function an_app_can_be_moved_to_a_different_saved_business(): void
+    {
+        $user = User::factory()->create();
+        $first = BusinessProfile::factory()->create(['organization_id' => $user->organization_id]);
+        $second = BusinessProfile::factory()->create(['organization_id' => $user->organization_id]);
+
+        $app = App::factory()->create([
+            'organization_id' => $user->organization_id,
+            'business_profile_id' => $first->id,
+        ]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/apps/{$app->id}", ['businessProfileId' => $second->id])
+            ->assertOk()
+            ->assertJsonPath('data.businessProfileId', $second->id);
+
+        $this->forgetAuthentication();
+
+        $this->actingAs($user)
+            ->patchJson("/api/apps/{$app->id}", ['businessProfileId' => null])
+            ->assertOk()
+            ->assertJsonPath('data.businessProfileId', null);
+    }
+
+    #[Test]
+    public function an_app_cannot_be_moved_onto_another_organisations_business(): void
+    {
+        $user = User::factory()->create();
+        $theirs = BusinessProfile::factory()->for(Organization::factory())->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/apps/{$app->id}", ['businessProfileId' => $theirs->id])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('businessProfileId');
     }
 
     #[Test]

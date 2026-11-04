@@ -92,13 +92,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::patch('apps/{app}/orders/{order}', [OrderController::class, 'update']);
 
+    Route::get('uploads', [UploadController::class, 'index']);
+
     Route::post('uploads', [UploadController::class, 'store'])
         ->middleware(['throttle:60,1', 'allow:build']);
 
+    Route::delete('uploads/{upload}', [UploadController::class, 'destroy'])
+        ->middleware('allow:build');
+
     Route::get('profiles', [BusinessProfileController::class, 'index']);
-    Route::get('profiles/{category}', [BusinessProfileController::class, 'show']);
-    Route::put('profiles/{category}', [BusinessProfileController::class, 'update'])->middleware('allow:build');
-    Route::delete('profiles/{category}', [BusinessProfileController::class, 'destroy'])->middleware('allow:build');
+    Route::get('profiles/{profile}', [BusinessProfileController::class, 'show']);
+    Route::post('profiles', [BusinessProfileController::class, 'store'])->middleware('allow:build');
+    Route::put('profiles/{profile}', [BusinessProfileController::class, 'update'])->middleware('allow:build');
+    Route::delete('profiles/{profile}', [BusinessProfileController::class, 'destroy'])->middleware('allow:build');
 
     Route::patch('account', [AccountController::class, 'update']);
 

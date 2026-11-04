@@ -7,12 +7,14 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['app_id', 'number', 'status', 'is_test', 'lines', 'details', 'total', 'platform'])]
+#[Fillable(['app_id', 'number', 'status', 'kind', 'is_test', 'lines', 'details', 'total', 'platform'])]
 class Order extends Model
 {
     use HasPrefixedUlid;
 
     public const STATUSES = ['new', 'confirmed', 'completed', 'cancelled'];
+
+    public const KINDS = ['order', 'request'];
 
     public static function idPrefix(): string
     {

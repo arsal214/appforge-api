@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'template_id',
     'industry',
     'category',
+    'business_profile_id',
     'status',
     'accent_color',
 ])]

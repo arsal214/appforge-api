@@ -19,6 +19,7 @@ class BusinessProfileController extends Controller
         $profiles = $request->user()->organization
             ->businessProfiles()
             ->orderBy('category')
+            ->orderBy('name')
             ->get();
 
         return response()->json([
@@ -26,47 +27,109 @@ class BusinessProfileController extends Controller
         ]);
     }
 
-    public function show(Request $request, string $category): JsonResponse
+    public function show(BusinessProfile $profile): JsonResponse
     {
-        $this->assertKnownCategory($category);
-
-        $profile = $this->find($request, $category);
-
-        return response()->json([
-            'data' => $profile ? $this->payload($profile) : null,
-        ]);
+        return response()->json(['data' => $this->payload($profile)]);
     }
 
-    public function update(Request $request, string $category): JsonResponse
+    public function store(Request $request): JsonResponse
     {
+        $category = (string) $request->input('category');
         $this->assertKnownCategory($category);
 
-        $data = $this->withoutBlanks($request->input('data'));
+        $organization = $request->user()->organization;
+        $limit = Contract::limit('maxBusinessProfiles');
+
+        if ($organization->businessProfiles()->count() >= $limit) {
+            throw ValidationException::withMessages([
+                'name' => ["You can save up to {$limit} businesses. Delete one you no longer need first."],
+            ]);
+        }
+
+        $name = $this->validName($request, $category, $organization->id, null);
+        $data = $this->cleanData($category, $request->input('data'));
+
+        $profile = $organization->businessProfiles()->create([
+            'category' => $category,
+            'name' => $name,
+            'data' => MediaUrl::forStorage($data),
+        ]);
+
+        return response()->json(['data' => $this->payload($profile)], 201);
+    }
+
+    public function update(Request $request, BusinessProfile $profile): JsonResponse
+    {
+        $name = $request->has('name')
+            ? $this->validName($request, $profile->category, $profile->organization_id, $profile->id)
+            : $profile->name;
+
+        $data = $this->cleanData($profile->category, $request->input('data'));
+
+        $profile->update([
+            'name' => $name,
+            'data' => MediaUrl::forStorage($data),
+        ]);
+
+        return response()->json(['data' => $this->payload($profile)]);
+    }
+
+    public function destroy(BusinessProfile $profile): JsonResponse
+    {
+        $profile->delete();
+
+        return response()->json(['data' => null]);
+    }
+
+    private function cleanData(string $category, mixed $input): array
+    {
+        $data = $this->withoutBlanks($input);
+        $data = is_array($data) ? $data : [];
+
         $errors = (new BusinessProfileValidator)->validate($category, $data);
 
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
 
-        $organization = $request->user()->organization;
-
-        $profile = $organization->businessProfiles()->updateOrCreate(
-            ['category' => $category],
-            ['data' => MediaUrl::forStorage($data)],
-        );
-
-        return response()->json(['data' => $this->payload($profile)]);
+        return $data;
     }
 
-    public function destroy(Request $request, string $category): JsonResponse
-    {
-        $this->assertKnownCategory($category);
+    private function validName(
+        Request $request,
+        string $category,
+        string $organizationId,
+        ?string $ignoreId,
+    ): string {
+        $name = trim((string) $request->input('name'));
+        $max = Contract::limit('maxLabel');
 
-        $profile = $this->find($request, $category);
+        if ($name === '') {
+            throw ValidationException::withMessages([
+                'name' => ['Give this business a name, so you can tell it from the others.'],
+            ]);
+        }
 
-        $profile?->delete();
+        if (mb_strlen($name) > $max) {
+            throw ValidationException::withMessages([
+                'name' => ["Keep the name under {$max} characters."],
+            ]);
+        }
 
-        return response()->json(['data' => null]);
+        $taken = BusinessProfile::query()
+            ->where('organization_id', $organizationId)
+            ->where('category', $category)
+            ->where('name', $name)
+            ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->exists();
+
+        if ($taken) {
+            throw ValidationException::withMessages([
+                'name' => ['You already have one saved under that name.'],
+            ]);
+        }
+
+        return $name;
     }
 
     private function withoutBlanks(mixed $value): mixed
@@ -94,14 +157,6 @@ class BusinessProfileController extends Controller
         return $cleaned;
     }
 
-    private function find(Request $request, string $category): ?BusinessProfile
-    {
-        return $request->user()->organization
-            ->businessProfiles()
-            ->where('category', $category)
-            ->first();
-    }
-
     private function assertKnownCategory(string $category): void
     {
         if (! in_array($category, Contract::vocabulary('businessCategories'), true)) {
@@ -117,6 +172,7 @@ class BusinessProfileController extends Controller
             'id' => $profile->id,
             'category' => $profile->category,
             'industry' => $profile->industry(),
+            'name' => $profile->name,
             'data' => MediaUrl::forDelivery($profile->data),
             'updatedAt' => Iso8601::from($profile->updated_at),
         ];

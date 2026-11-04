@@ -18,6 +18,8 @@ return [
 
     'expiration' => null,
 
+    'idle_minutes' => (int) env('SANCTUM_IDLE_MINUTES', 60 * 24 * 14),
+
     'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
 
     'middleware' => [

@@ -24,7 +24,16 @@ class AppResource extends JsonResource
             'category' => $this->category,
             'status' => $this->status,
             'accentColor' => $this->accent_color,
+            'businessProfileId' => $this->business_profile_id,
             'publishedVersion' => $this->published_version,
+            'newOrders' => $this->whenCounted(
+                'new_orders',
+                fn () => (int) $this->new_orders_count,
+            ),
+            'newTests' => $this->whenCounted(
+                'new_tests',
+                fn () => (int) $this->new_tests_count,
+            ),
             'createdAt' => Iso8601::from($this->created_at),
             'updatedAt' => Iso8601::from($this->updated_at),
         ];

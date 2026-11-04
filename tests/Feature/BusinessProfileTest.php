@@ -2,10 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\App;
 use App\Models\BusinessProfile;
 use App\Models\Organization;
 use App\Models\User;
+use AppForge\Schema\Contract;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -13,22 +16,39 @@ class BusinessProfileTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function payload(array $overrides = []): array
+    private function payload(array $overrides = [], array $extra = []): array
     {
-        return ['data' => array_merge([
-            'businessName' => 'Sams Pizza',
-        ], $overrides)];
+        return array_merge([
+            'category' => 'restaurant',
+            'name' => 'Sams Pizza',
+            'data' => array_merge(['businessName' => 'Sams Pizza'], $overrides),
+        ], $extra);
+    }
+
+    private function onlyProfileId(): string
+    {
+        return (string) DB::table('business_profiles')->orderBy('id')->value('id');
     }
 
     #[Test]
-    public function a_category_with_nothing_saved_returns_null_not_404(): void
+    public function a_customer_with_nothing_saved_gets_an_empty_list(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->getJson('/api/profiles/restaurant')
+            ->getJson('/api/profiles')
             ->assertOk()
-            ->assertExactJson(['data' => null]);
+            ->assertExactJson(['data' => []]);
+    }
+
+    #[Test]
+    public function a_profile_that_does_not_exist_is_a_404(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->getJson('/api/profiles/bzp_01jzzzzzzzzzzzzzzzzzzzzzzz')
+            ->assertNotFound();
     }
 
     #[Test]
@@ -37,7 +57,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'tagline' => 'Fresh pizza, fast',
                 'currencySymbol' => '£',
                 'menuGroups' => [[
@@ -50,39 +70,120 @@ class BusinessProfileTest extends TestCase
                     ]],
                 ]],
             ]))
-            ->assertOk()
+            ->assertCreated()
             ->assertJsonPath('data.category', 'restaurant')
             ->assertJsonPath('data.industry', 'restaurant')
+            ->assertJsonPath('data.name', 'Sams Pizza')
             ->assertJsonPath('data.data.menuGroups.0.entries.0.title', 'Margherita');
 
+        $id = $this->onlyProfileId();
         $this->forgetAuthentication();
 
         $this->actingAs($user)
-            ->getJson('/api/profiles/restaurant')
+            ->getJson("/api/profiles/{$id}")
             ->assertOk()
             ->assertJsonPath('data.data.tagline', 'Fresh pizza, fast');
     }
 
     #[Test]
-    public function saving_twice_updates_one_row_rather_than_adding_a_second(): void
+    public function saving_the_same_profile_twice_updates_one_row(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload(['tagline' => 'First']))
-            ->assertOk();
+            ->postJson('/api/profiles', $this->payload(['tagline' => 'First']))
+            ->assertCreated();
+
+        $id = $this->onlyProfileId();
+        $this->forgetAuthentication();
+
+        $this->actingAs($user)
+            ->putJson("/api/profiles/{$id}", $this->payload(['tagline' => 'Second']))
+            ->assertOk()
+            ->assertJsonPath('data.data.tagline', 'Second');
+
+        $this->assertSame(
+            1,
+            DB::table('business_profiles')->where('organization_id', $user->organization_id)->count(),
+        );
+    }
+
+    #[Test]
+    public function one_customer_can_keep_two_businesses_of_the_same_kind(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/profiles', $this->payload(
+                ['businessName' => 'Mill Lane'],
+                ['name' => 'Mill Lane'],
+            ))
+            ->assertCreated();
 
         $this->forgetAuthentication();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload(['tagline' => 'Second']))
-            ->assertOk()
-            ->assertJsonPath('data.data.tagline', 'Second');
+            ->postJson('/api/profiles', $this->payload(
+                ['businessName' => 'Station Road'],
+                ['name' => 'Station Road'],
+            ))
+            ->assertCreated();
 
-        $this->assertSame(1, BusinessProfile::withoutGlobalScopes()
-            ->where('organization_id', $user->organization_id)
-            ->where('category', 'restaurant')
-            ->count());
+        $this->forgetAuthentication();
+
+        $saved = $this->actingAs($user)->getJson('/api/profiles')->assertOk()->json('data');
+
+        $this->assertCount(2, $saved, 'the second restaurant replaced the first');
+        $this->assertSame(['Mill Lane', 'Station Road'], array_column($saved, 'name'));
+        $this->assertSame(
+            ['Mill Lane', 'Station Road'],
+            array_column(array_column($saved, 'data'), 'businessName'),
+            'both exist but they are sharing one set of details',
+        );
+    }
+
+    #[Test]
+    public function two_businesses_of_one_kind_cannot_share_a_name(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/profiles', $this->payload([], ['name' => 'Mill Lane']))
+            ->assertCreated();
+
+        $this->forgetAuthentication();
+
+        $this->actingAs($user)
+            ->postJson('/api/profiles', $this->payload([], ['name' => 'Mill Lane']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('name');
+    }
+
+    #[Test]
+    public function a_business_has_to_be_given_a_name(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/profiles', $this->payload([], ['name' => '   ']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('name');
+    }
+
+    #[Test]
+    public function there_is_a_ceiling_on_how_many_can_be_saved(): void
+    {
+        $user = User::factory()->create();
+        $limit = Contract::limit('maxBusinessProfiles');
+
+        BusinessProfile::factory()->count($limit)->create([
+            'organization_id' => $user->organization_id,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/profiles', $this->payload([], ['name' => 'One too many']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('name');
     }
 
     #[Test]
@@ -93,8 +194,8 @@ class BusinessProfileTest extends TestCase
         foreach (['restaurant', 'cafe', 'gym'] as $category) {
             $this->forgetAuthentication();
             $this->actingAs($user)
-                ->putJson("/api/profiles/{$category}", $this->payload())
-                ->assertOk();
+                ->postJson('/api/profiles', $this->payload([], ['category' => $category]))
+                ->assertCreated();
         }
 
         $this->forgetAuthentication();
@@ -114,19 +215,42 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/nightclub', $this->payload())
+            ->postJson('/api/profiles', $this->payload([], ['category' => 'nightclub']))
             ->assertStatus(422)
             ->assertJsonValidationErrors('category');
     }
 
     #[Test]
-    public function deleting_a_profile_that_was_never_saved_succeeds(): void
+    public function deleting_one_that_is_not_there_is_a_404(): void
     {
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->deleteJson('/api/profiles/restaurant')
+            ->deleteJson('/api/profiles/bzp_01jzzzzzzzzzzzzzzzzzzzzzzz')
+            ->assertNotFound();
+    }
+
+    #[Test]
+    public function deleting_a_saved_business_leaves_the_apps_it_filled_in(): void
+    {
+        $user = User::factory()->create();
+        $profile = BusinessProfile::factory()->create([
+            'organization_id' => $user->organization_id,
+        ]);
+        $app = App::factory()->create([
+            'organization_id' => $user->organization_id,
+            'business_profile_id' => $profile->id,
+        ]);
+
+        $this->actingAs($user)
+            ->deleteJson("/api/profiles/{$profile->id}")
             ->assertOk();
+
+        $this->assertSame(
+            1,
+            DB::table('apps')->where('id', $app->id)->whereNull('deleted_at')->count(),
+        );
+        $this->assertNull(DB::table('apps')->where('id', $app->id)->value('business_profile_id'));
     }
 
     #[Test]
@@ -135,13 +259,13 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'tagline' => '',
                 'about' => '',
                 'phone' => '',
                 'logoUrl' => '',
             ]))
-            ->assertOk();
+            ->assertCreated();
 
         $stored = $response->json('data.data');
 
@@ -157,10 +281,10 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'addressLines' => ['', '12 High Street', '', 'London'],
             ]))
-            ->assertOk();
+            ->assertCreated();
 
         $this->assertSame(
             ['12 High Street', 'London'],
@@ -174,13 +298,13 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'openingHours' => [
                     ['day' => 'Mon-Sat', 'hours' => '11:00-23:00', 'closed' => false],
                     ['day' => 'Sunday', 'hours' => '', 'closed' => true],
                 ],
             ]))
-            ->assertOk();
+            ->assertCreated();
 
         $rows = $response->json('data.data.openingHours');
 
@@ -195,11 +319,11 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'menuGroups' => [],
                 'socialLinks' => [],
             ]))
-            ->assertOk();
+            ->assertCreated();
 
         $stored = $response->json('data.data');
         $this->assertArrayNotHasKey('menuGroups', $stored);
@@ -210,12 +334,11 @@ class BusinessProfileTest extends TestCase
     public function another_organisations_profile_is_invisible(): void
     {
         $user = User::factory()->create();
-        BusinessProfile::factory()->restaurant()->for(Organization::factory())->create();
+        $theirs = BusinessProfile::factory()->restaurant()->for(Organization::factory())->create();
 
         $this->actingAs($user)
-            ->getJson('/api/profiles/restaurant')
-            ->assertOk()
-            ->assertExactJson(['data' => null]);
+            ->getJson("/api/profiles/{$theirs->id}")
+            ->assertNotFound();
 
         $this->forgetAuthentication();
 
@@ -232,8 +355,8 @@ class BusinessProfileTest extends TestCase
         $theirs = BusinessProfile::factory()->restaurant()->for(Organization::factory())->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload(['businessName' => 'Hijacked']))
-            ->assertOk();
+            ->putJson("/api/profiles/{$theirs->id}", $this->payload(['businessName' => 'Hijacked']))
+            ->assertNotFound();
 
         $this->assertSame(
             'Sams Pizza',
@@ -249,8 +372,8 @@ class BusinessProfileTest extends TestCase
         $theirs = BusinessProfile::factory()->restaurant()->for(Organization::factory())->create();
 
         $this->actingAs($user)
-            ->deleteJson('/api/profiles/restaurant')
-            ->assertOk();
+            ->deleteJson("/api/profiles/{$theirs->id}")
+            ->assertNotFound();
 
         $this->assertNotNull($theirs->fresh(), 'another organisation\'s profile was deleted');
     }
@@ -260,7 +383,7 @@ class BusinessProfileTest extends TestCase
     {
         $this->getJson('/api/profiles')->assertUnauthorized();
         $this->getJson('/api/profiles/restaurant')->assertUnauthorized();
-        $this->putJson('/api/profiles/restaurant', $this->payload())->assertUnauthorized();
+        $this->postJson('/api/profiles', $this->payload())->assertUnauthorized();
         $this->deleteJson('/api/profiles/restaurant')->assertUnauthorized();
     }
 
@@ -270,7 +393,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'stripeSecretKey' => 'sk_live_not_on_my_watch',
             ]))
             ->assertStatus(422)
@@ -283,7 +406,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'classTimetable' => [['day' => 'Monday', 'time' => '18:00', 'name' => 'Spin']],
             ]))
             ->assertStatus(422)
@@ -292,10 +415,11 @@ class BusinessProfileTest extends TestCase
         $this->forgetAuthentication();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/gym', $this->payload([
-                'classTimetable' => [['day' => 'Monday', 'time' => '18:00', 'name' => 'Spin']],
-            ]))
-            ->assertOk();
+            ->postJson('/api/profiles', $this->payload(
+                ['classTimetable' => [['day' => 'Monday', 'time' => '18:00', 'name' => 'Spin']]],
+                ['category' => 'gym'],
+            ))
+            ->assertCreated();
     }
 
     #[Test]
@@ -312,7 +436,7 @@ class BusinessProfileTest extends TestCase
         foreach ($cases as $path => $payload) {
             $this->forgetAuthentication();
             $this->actingAs($user)
-                ->putJson('/api/profiles/restaurant', $payload)
+                ->postJson('/api/profiles', $payload)
                 ->assertStatus(422)
                 ->assertJsonValidationErrors($path);
         }
@@ -320,7 +444,7 @@ class BusinessProfileTest extends TestCase
         $this->forgetAuthentication();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'menuGroups' => [[
                     'id' => 'grp_pizza',
                     'name' => 'Pizza',
@@ -341,7 +465,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'menuGroups' => [[
                     'id' => 'grp_pizza',
                     'name' => 'Pizza',
@@ -362,15 +486,15 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', ['data' => []])
+            ->postJson('/api/profiles', $this->payload([], ['data' => []]))
             ->assertStatus(422)
             ->assertJsonValidationErrors('data.businessName');
 
         $this->forgetAuthentication();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload())
-            ->assertOk();
+            ->postJson('/api/profiles', $this->payload())
+            ->assertCreated();
     }
 
     #[Test]
@@ -379,7 +503,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'openingHours' => [
                     ['day' => 'Monday', 'hours' => '', 'closed' => false],
                     ['day' => 'Sunday', 'hours' => '', 'closed' => true],
@@ -396,7 +520,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'menuGroups' => [[
                     'id' => 'grp_pizza',
                     'name' => 'Pizza',
@@ -416,7 +540,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'about' => str_repeat('a', 600_000),
             ]))
             ->assertStatus(422)
@@ -429,7 +553,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'menuGroups' => [[
                     'id' => 'grp_pizza',
                     'name' => 'Pizza',
@@ -440,7 +564,7 @@ class BusinessProfileTest extends TestCase
                     ],
                 ]],
             ]))
-            ->assertOk();
+            ->assertCreated();
 
         $entries = $response->json('data.data.menuGroups.0.entries');
 
@@ -455,7 +579,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'menuGroups' => [[
                     'id' => 'grp_pizza',
                     'name' => 'Pizza',
@@ -474,7 +598,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->create();
 
         $this->actingAs($user)
-            ->putJson('/api/profiles/restaurant', $this->payload([
+            ->postJson('/api/profiles', $this->payload([
                 'socialLinks' => [['platform' => 'myspace', 'url' => 'https://example.com']],
             ]))
             ->assertStatus(422)

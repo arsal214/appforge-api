@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreOrderRequest;
 use App\Http\Resources\OrderResource;
+use App\Mail\OrderArrived;
 use App\Models\App as ClientApp;
 use App\Models\Order;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 
 class OrderController extends Controller
@@ -28,6 +32,8 @@ class OrderController extends Controller
 
         $order = $this->record($app, $request, test: false);
 
+        $this->tellTheShop($order);
+
         return response()->json(['data' => ['number' => $order->number]], 201);
     }
 
@@ -36,6 +42,8 @@ class OrderController extends Controller
         $model = $this->findOwned($request, $app);
 
         $order = $this->record($model->getKey(), $request, test: true);
+
+        $this->tellTheShop($order);
 
         return (new OrderResource($order))->response()->setStatusCode(201);
     }
@@ -47,6 +55,35 @@ class OrderController extends Controller
         return response()->json(['data' => null]);
     }
 
+    private function tellTheShop(Order $order): void
+    {
+        try {
+            $app = DB::table('apps')
+                ->where('id', $order->app_id)
+                ->first(['id', 'name', 'organization_id']);
+
+            if (! $app) {
+                return;
+            }
+
+            $owners = User::where('organization_id', $app->organization_id)
+                ->where('role', 'owner')
+                ->get();
+
+            foreach ($owners as $owner) {
+                Mail::to($owner->email)->queue(
+                    new OrderArrived($app->id, $app->name, $order),
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::error('Could not queue the order notification', [
+                'order' => $order->getKey(),
+                'app' => $order->app_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function record(string $appId, StoreOrderRequest $request, bool $test): Order
     {
         return DB::transaction(function () use ($appId, $request, $test) {
@@ -56,6 +93,8 @@ class OrderController extends Controller
                 'app_id' => $appId,
                 'number' => $taken + 1,
                 'status' => 'new',
+                'kind' => $request->validated('kind')
+                    ?? ($request->validated('lines') === [] ? 'request' : 'order'),
                 'is_test' => $test,
                 'lines' => $request->validated('lines'),
                 'details' => $request->validated('details'),
