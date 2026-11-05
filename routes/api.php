@@ -32,7 +32,7 @@ Route::prefix('auth')->group(function () {
         Route::post('reset-password', [PasswordResetController::class, 'reset']);
     });
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
     });
@@ -40,19 +40,19 @@ Route::prefix('auth')->group(function () {
 
 Route::get('templates', [TemplateController::class, 'index']);
 
-Route::middleware('throttle:120,1')
+Route::middleware('throttle:public-config')
     ->get('public/configs/{app}', [PublicConfigController::class, 'show']);
 
-Route::middleware('throttle:30,1')
+Route::middleware('throttle:public-devices')
     ->post('public/apps/{app}/devices', [DeviceController::class, 'store']);
 
-Route::middleware('throttle:60,1')
+Route::middleware('throttle:public-events')
     ->post('public/apps/{app}/events', [EventController::class, 'store']);
 
-Route::middleware('throttle:20,1')
+Route::middleware('throttle:public-orders')
     ->post('public/apps/{app}/orders', [OrderController::class, 'store']);
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
     Route::get('apps', [AppController::class, 'index']);
     Route::get('apps/trashed', [AppController::class, 'trashed']);
     Route::post('apps', [AppController::class, 'store'])->middleware('allow:build');

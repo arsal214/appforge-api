@@ -33,7 +33,8 @@ class StoreOrderRequest extends FormRequest
             'details.*.value' => ['required', 'string', 'max:'.Contract::limit('maxShortText')],
             'details.*.kind' => ['nullable', Rule::in(Contract::vocabulary('detailKinds'))],
 
-            'kind' => ['nullable', Rule::in(Order::KINDS)],
+            'kind' => ['nullable', Rule::in(Order::kinds())],
+            'formId' => ['nullable', 'string', 'max:64'],
             'platform' => ['nullable', 'in:ios,android'],
         ];
     }

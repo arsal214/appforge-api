@@ -93,9 +93,40 @@ class MediaLibraryTest extends TestCase
         $names = $this->actingAs($user)
             ->getJson('/api/uploads')
             ->assertOk()
-            ->json('data.*.name');
+            ->json('data.uploads.*.name');
 
         $this->assertSame(['two.png', 'one.png'], $names, 'newest should come first');
+    }
+
+    #[Test]
+    public function the_library_hands_back_one_page_and_says_there_is_another(): void
+    {
+        $user = User::factory()->create();
+
+        for ($i = 1; $i <= 61; $i++) {
+            Upload::factory()
+                ->inOrganization($user->organization)
+                ->create(['name' => "image-{$i}.png"]);
+        }
+
+        $first = $this->actingAs($user)
+            ->getJson('/api/uploads')
+            ->assertOk()
+            ->assertJsonPath('data.hasMore', true)
+            ->json('data.uploads');
+
+        $this->assertCount(60, $first);
+
+        $this->forgetAuthentication();
+
+        $second = $this->actingAs($user)
+            ->getJson('/api/uploads?before='.end($first)['id'])
+            ->assertOk()
+            ->assertJsonPath('data.hasMore', false)
+            ->json('data.uploads');
+
+        $this->assertCount(1, $second, 'the oldest image could not be reached');
+        $this->assertSame('image-1.png', $second[0]['name']);
     }
 
     #[Test]
@@ -110,7 +141,7 @@ class MediaLibraryTest extends TestCase
         $names = $this->actingAs($mine)
             ->getJson('/api/uploads')
             ->assertOk()
-            ->json('data.*.name');
+            ->json('data.uploads.*.name');
 
         $this->assertSame(['mine.png'], $names);
     }

@@ -10,7 +10,6 @@ use App\Support\MediaUrl;
 use AppForge\Schema\Contract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -18,17 +17,34 @@ use Illuminate\Validation\ValidationException;
 
 class UploadController extends Controller
 {
+    private const PER_PAGE = 60;
+
     private const EXTENSIONS = [
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
         'image/webp' => 'webp',
     ];
 
-    public function index(): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
-        return UploadResource::collection(
-            Upload::query()->latest()->get()
-        );
+        $validated = $request->validate([
+            'before' => ['nullable', 'string', 'max:30'],
+        ]);
+
+        $query = Upload::query()->orderByDesc('id');
+
+        if (($validated['before'] ?? null) !== null) {
+            $query->where('id', '<', $validated['before']);
+        }
+
+        $rows = $query->limit(self::PER_PAGE + 1)->get();
+
+        return response()->json([
+            'data' => [
+                'uploads' => UploadResource::collection($rows->take(self::PER_PAGE)),
+                'hasMore' => $rows->count() > self::PER_PAGE,
+            ],
+        ]);
     }
 
     public function store(Request $request): JsonResponse
