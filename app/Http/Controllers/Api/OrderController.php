@@ -11,7 +11,6 @@ use App\Models\Order;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -19,6 +18,8 @@ use Illuminate\Validation\Rule;
 
 class OrderController extends Controller
 {
+    private const PER_PAGE = 50;
+
     public function store(StoreOrderRequest $request, string $app): JsonResponse
     {
         // Unauthenticated, so the app cannot be resolved through the
@@ -94,7 +95,8 @@ class OrderController extends Controller
                 'number' => $taken + 1,
                 'status' => 'new',
                 'kind' => $request->validated('kind')
-                    ?? ($request->validated('lines') === [] ? 'request' : 'order'),
+                    ?? ($request->validated('lines') === [] ? 'booking' : 'order'),
+                'form_id' => $request->validated('formId'),
                 'is_test' => $test,
                 'lines' => $request->validated('lines'),
                 'details' => $request->validated('details'),
@@ -104,31 +106,65 @@ class OrderController extends Controller
         });
     }
 
-    public function index(Request $request, string $app): AnonymousResourceCollection
+    public function index(Request $request, string $app): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['nullable', Rule::in(Order::STATUSES)],
+            'status' => ['nullable', Rule::in(Order::statuses())],
+            'kind' => ['nullable', Rule::in(Order::kinds())],
+            'before' => ['nullable', 'integer', 'min:1'],
         ]);
+
+        $owned = $this->findOwned($request, $app);
 
         // By number, not created_at: the column holds whole seconds, so two
         // orders placed in the same second would come back in an arbitrary
-        // order. The number is the sequence anyway.
-        $orders = $this->findOwned($request, $app)->orders()->orderByDesc('number');
+        $query = $owned->orders()->orderByDesc('number');
 
-        if (($validated['status'] ?? null) !== null) {
-            $orders->where('status', $validated['status']);
+        foreach (['status', 'kind'] as $field) {
+            if (($validated[$field] ?? null) !== null) {
+                $query->where($field, $validated[$field]);
+            }
         }
 
-        return OrderResource::collection($orders->limit(200)->get());
+        if (($validated['before'] ?? null) !== null) {
+            $query->where('number', '<', $validated['before']);
+        }
+
+        $rows = $query->limit(self::PER_PAGE + 1)->get();
+
+        return response()->json([
+            'data' => [
+                'orders' => OrderResource::collection($rows->take(self::PER_PAGE)),
+                'waiting' => $this->waiting($owned),
+                'hasMore' => $rows->count() > self::PER_PAGE,
+            ],
+        ]);
+    }
+
+    private function waiting(ClientApp $app): array
+    {
+        $counts = $app->orders()
+            ->where('status', 'new')
+            ->selectRaw('kind, count(*) as total')
+            ->groupBy('kind')
+            ->pluck('total', 'kind');
+
+        $waiting = [];
+        foreach (Order::kinds() as $kind) {
+            $waiting[$kind] = (int) ($counts[$kind] ?? 0);
+        }
+
+        return $waiting;
     }
 
     public function update(Request $request, string $app, string $order): OrderResource
     {
+        $record = $this->findOwned($request, $app)->orders()->findOrFail($order);
+
         $validated = $request->validate([
-            'status' => ['required', Rule::in(Order::STATUSES)],
+            'status' => ['required', Rule::in(Order::statusesFor($record->kind))],
         ]);
 
-        $record = $this->findOwned($request, $app)->orders()->findOrFail($order);
         $record->update(['status' => $validated['status']]);
 
         return new OrderResource($record);

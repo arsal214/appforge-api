@@ -66,11 +66,11 @@ class OrdersTest extends TestCase
         $data = $this->actingAs($user)
             ->getJson("/api/apps/{$app->id}/orders")
             ->assertOk()
-            ->json('data');
+            ->json('data.orders');
 
         $this->assertCount(1, $data);
         $this->assertEqualsCanonicalizing([
-            'id', 'appId', 'number', 'status', 'kind', 'test', 'lines', 'details',
+            'id', 'appId', 'number', 'status', 'kind', 'formId', 'test', 'lines', 'details',
             'total', 'platform', 'createdAt', 'updatedAt',
         ], array_keys($data[0]));
 
@@ -87,13 +87,13 @@ class OrdersTest extends TestCase
     }
 
     #[Test]
-    public function a_booking_says_it_is_a_request_even_though_it_has_a_line(): void
+    public function a_booking_says_it_is_a_booking_even_though_it_has_a_line(): void
     {
         $user = User::factory()->create();
         $app = App::factory()->create(['organization_id' => $user->organization_id]);
 
         $this->postJson("/api/public/apps/{$app->id}/orders", [
-            'kind' => 'request',
+            'kind' => 'booking',
             'lines' => [
                 ['itemId' => 'svc-colour', 'title' => 'Colour', 'price' => null, 'quantity' => 1],
             ],
@@ -103,7 +103,7 @@ class OrdersTest extends TestCase
 
         $order = Order::firstOrFail();
 
-        $this->assertSame('request', $order->kind);
+        $this->assertSame('booking', $order->kind);
         $this->assertSame('Colour', $order->lines[0]['title']);
     }
 
@@ -123,9 +123,150 @@ class OrdersTest extends TestCase
             ->assertCreated();
 
         $this->assertSame(
-            ['request', 'order'],
+            ['booking', 'order'],
             Order::orderBy('number')->pluck('kind')->all(),
         );
+    }
+
+    #[Test]
+    public function a_form_can_say_which_inbox_it_belongs_in(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", [
+            'kind' => 'message',
+            'formId' => 'contact',
+            'lines' => [],
+            'total' => null,
+            'details' => [['label' => 'How can we help?', 'value' => 'Do you do gluten free?']],
+        ])->assertCreated();
+
+        $order = Order::firstOrFail();
+
+        $this->assertSame('message', $order->kind);
+        $this->assertSame('contact', $order->form_id);
+    }
+
+    #[Test]
+    public function a_question_is_replied_to_rather_than_completed(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+        $message = Order::create([
+            'app_id' => $app->id, 'number' => 1, 'status' => 'new', 'kind' => 'message',
+            'is_test' => false, 'lines' => [], 'details' => [['label' => 'Q', 'value' => 'Hi']],
+        ]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/apps/{$app->id}/orders/{$message->id}", ['status' => 'replied'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'replied');
+
+        $this->forgetAuthentication();
+
+        $this->actingAs($user)
+            ->patchJson("/api/apps/{$app->id}/orders/{$message->id}", ['status' => 'completed'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+    }
+
+    #[Test]
+    public function an_order_cannot_be_marked_replied(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())->assertCreated();
+        $order = Order::firstOrFail();
+
+        $this->actingAs($user)
+            ->patchJson("/api/apps/{$app->id}/orders/{$order->id}", ['status' => 'replied'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('status');
+    }
+
+    #[Test]
+    public function a_kind_can_be_asked_for_so_the_cap_does_not_hide_it(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        for ($i = 1; $i <= 205; $i++) {
+            Order::create([
+                'app_id' => $app->id, 'number' => $i, 'status' => 'new', 'kind' => 'order',
+                'is_test' => false, 'lines' => [], 'details' => [['label' => 'N', 'value' => 'x']],
+            ]);
+        }
+
+        Order::create([
+            'app_id' => $app->id, 'number' => 206, 'status' => 'new', 'kind' => 'message',
+            'is_test' => false, 'lines' => [], 'details' => [['label' => 'Q', 'value' => 'Hi']],
+        ]);
+
+        $kinds = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->json('data.orders.*.kind');
+
+        $this->assertCount(50, $kinds);
+
+        $this->forgetAuthentication();
+
+        $only = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders?kind=message")
+            ->assertOk()
+            ->json('data.orders');
+
+        $this->assertCount(1, $only, 'the message could not be reached at all');
+        $this->assertSame('message', $only[0]['kind']);
+    }
+
+    #[Test]
+    public function older_records_are_reachable_a_page_at_a_time(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        for ($i = 1; $i <= 60; $i++) {
+            Order::create([
+                'app_id' => $app->id, 'number' => $i, 'status' => 'new',
+                'kind' => $i === 1 ? 'message' : 'order',
+                'is_test' => false, 'lines' => [], 'details' => [['label' => 'N', 'value' => 'x']],
+            ]);
+        }
+
+        $first = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->assertJsonPath('data.hasMore', true)
+            ->json('data.orders.*.number');
+
+        $this->assertSame(range(60, 11), $first);
+
+        $this->forgetAuthentication();
+
+        $second = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders?before=".end($first))
+            ->assertOk()
+            ->assertJsonPath('data.hasMore', false)
+            ->assertJsonPath('data.waiting.message', 1)
+            ->assertJsonPath('data.waiting.order', 59)
+            ->assertJsonPath('data.waiting.booking', 0)
+            ->json('data.orders.*.number');
+
+        $this->assertSame(range(10, 1), $second);
+    }
+
+    #[Test]
+    public function a_cursor_that_is_not_a_number_is_refused(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders?before=yesterday")
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['before']);
     }
 
     #[Test]
@@ -204,7 +345,7 @@ class OrdersTest extends TestCase
         $data = $this->actingAs($user)
             ->getJson("/api/apps/{$app->id}/orders")
             ->assertOk()
-            ->json('data.0');
+            ->json('data.orders.0');
 
         $this->assertSame([], $data['details']);
         $this->assertNull($data['total']);
@@ -233,7 +374,7 @@ class OrdersTest extends TestCase
         $data = $this->actingAs($user)
             ->getJson("/api/apps/{$app->id}/orders")
             ->assertOk()
-            ->json('data.0');
+            ->json('data.orders.0');
 
         $this->assertSame([], $data['lines']);
         $this->assertNull($data['total']);
@@ -263,7 +404,7 @@ class OrdersTest extends TestCase
         $listed = $this->actingAs($user)
             ->getJson("/api/apps/{$app->id}/orders")
             ->assertOk()
-            ->json('data');
+            ->json('data.orders');
 
         $this->assertCount(1, $listed);
         $this->assertTrue($listed[0]['test']);
@@ -279,7 +420,7 @@ class OrdersTest extends TestCase
             ->assertCreated();
 
         $this->assertFalse(
-            $this->actingAs($user)->getJson("/api/apps/{$app->id}/orders")->json('data.0.test'),
+            $this->actingAs($user)->getJson("/api/apps/{$app->id}/orders")->json('data.orders.0.test'),
             'an order somebody is waiting on must not be dismissable as a test',
         );
     }
@@ -301,7 +442,7 @@ class OrdersTest extends TestCase
         $left = $this->actingAs($user)
             ->getJson("/api/apps/{$app->id}/orders")
             ->assertOk()
-            ->json('data');
+            ->json('data.orders');
 
         $this->assertSame([3, 1], array_column($left, 'number'));
         $this->assertSame([false, false], array_column($left, 'test'));
@@ -359,7 +500,7 @@ class OrdersTest extends TestCase
         $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())->assertCreated();
 
         $numbers = array_column(
-            $this->actingAs($user)->getJson("/api/apps/{$app->id}/orders")->json('data'),
+            $this->actingAs($user)->getJson("/api/apps/{$app->id}/orders")->json('data.orders'),
             'number',
         );
         $this->assertSame([2, 1], $numbers);
@@ -376,7 +517,7 @@ class OrdersTest extends TestCase
             array_column(
                 $this->actingAs($user)
                     ->getJson("/api/apps/{$app->id}/orders?status=completed")
-                    ->json('data'),
+                    ->json('data.orders'),
                 'number',
             ),
         );
@@ -384,7 +525,7 @@ class OrdersTest extends TestCase
         $this->assertSame(
             [2],
             array_column(
-                $this->actingAs($user)->getJson("/api/apps/{$app->id}/orders?status=new")->json('data'),
+                $this->actingAs($user)->getJson("/api/apps/{$app->id}/orders?status=new")->json('data.orders'),
                 'number',
             ),
         );

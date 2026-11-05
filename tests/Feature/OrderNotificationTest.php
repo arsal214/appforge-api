@@ -135,7 +135,7 @@ class OrderNotificationTest extends TestCase
     }
 
     #[Test]
-    public function a_booking_is_called_a_request_even_once_it_names_a_service(): void
+    public function a_booking_is_announced_as_a_booking_once_it_names_a_service(): void
     {
         $owner = User::factory()->create(['role' => 'owner']);
         $app = ClientApp::factory()->create([
@@ -144,7 +144,7 @@ class OrderNotificationTest extends TestCase
         ]);
 
         $this->postJson("/api/public/apps/{$app->id}/orders", [
-            'kind' => 'request',
+            'kind' => 'booking',
             'lines' => [
                 ['itemId' => 'svc-colour', 'title' => 'Colour', 'price' => null, 'quantity' => 1],
             ],
@@ -155,7 +155,7 @@ class OrderNotificationTest extends TestCase
         Mail::assertQueued(OrderArrived::class, function (OrderArrived $mail): bool {
             $subject = $mail->envelope()->subject;
 
-            return $subject === 'New request #1 — Snip';
+            return $subject === 'New booking #1 — Snip';
         });
     }
 
