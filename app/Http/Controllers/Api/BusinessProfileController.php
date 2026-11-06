@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Iso8601;
 use App\Models\BusinessProfile;
+use App\Support\Activity;
 use App\Support\MediaUrl;
 use App\Support\Profile\BusinessProfileValidator;
 use AppForge\Schema\Contract;
@@ -55,6 +56,14 @@ class BusinessProfileController extends Controller
             'data' => MediaUrl::forStorage($data),
         ]);
 
+        Activity::record(
+            $request->user(),
+            'business.saved',
+            $profile->name,
+            $profile->getKey(),
+            ['category' => $profile->category],
+        );
+
         return response()->json(['data' => $this->payload($profile)], 201);
     }
 
@@ -71,12 +80,24 @@ class BusinessProfileController extends Controller
             'data' => MediaUrl::forStorage($data),
         ]);
 
+        Activity::record(
+            $request->user(),
+            'business.changed',
+            $profile->name,
+            $profile->getKey(),
+        );
+
         return response()->json(['data' => $this->payload($profile)]);
     }
 
-    public function destroy(BusinessProfile $profile): JsonResponse
+    public function destroy(Request $request, BusinessProfile $profile): JsonResponse
     {
+        $name = $profile->name;
+        $id = $profile->getKey();
+
         $profile->delete();
+
+        Activity::record($request->user(), 'business.removed', $name, $id);
 
         return response()->json(['data' => null]);
     }

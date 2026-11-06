@@ -17,6 +17,7 @@ class EnsureAbility
     private const REFUSALS = [
         'team' => 'Only the owner can change who is on the team.',
         'build' => 'Your role can see the apps and work their orders, but not change them. Ask the owner if you need to.',
+        'account' => 'Only the owner can take a copy of the whole account or close it.',
     ];
 
     public function handle(Request $request, Closure $next, string $ability): Response

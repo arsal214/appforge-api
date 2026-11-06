@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Iso8601;
 use App\Models\App as ClientApp;
+use App\Support\Activity;
 use App\Support\Vault\CredentialType;
 use App\Support\Vault\CredentialVault;
 use App\Support\Vault\KeyManagement;
@@ -90,6 +91,14 @@ class CredentialController extends Controller
             ]);
         }
 
+        Activity::record(
+            $request->user(),
+            'credential.saved',
+            CredentialType::label($type).' on '.$model->name,
+            $model->getKey(),
+            ['type' => $type],
+        );
+
         return response()->json(['data' => null], 201);
     }
 
@@ -99,6 +108,14 @@ class CredentialController extends Controller
         $credential = $model->credentials()->where('type', $type)->firstOrFail();
 
         $this->vault->forget($credential, $request->user()->getKey());
+
+        Activity::record(
+            $request->user(),
+            'credential.removed',
+            CredentialType::label($type).' on '.$model->name,
+            $model->getKey(),
+            ['type' => $type],
+        );
 
         return response()->json(['data' => null]);
     }

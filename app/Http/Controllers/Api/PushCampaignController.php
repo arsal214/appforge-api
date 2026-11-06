@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StorePushCampaignRequest;
 use App\Http\Resources\PushCampaignResource;
 use App\Models\App as ClientApp;
+use App\Support\Activity;
 use App\Support\Push\LogPushSender;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -53,6 +54,14 @@ class PushCampaignController extends Controller
             'created_by' => $request->user()->getKey(),
         ]);
 
+        Activity::record(
+            $request->user(),
+            'push.written',
+            $campaign->title,
+            $campaign->getKey(),
+            ['app' => $model->name],
+        );
+
         return (new PushCampaignResource($campaign))->response()->setStatusCode(201);
     }
 
@@ -65,7 +74,12 @@ class PushCampaignController extends Controller
             abort(422, 'A notification that has already been sent can\'t be deleted.');
         }
 
+        $title = $record->title;
+        $id = $record->getKey();
+
         $record->delete();
+
+        Activity::record($request->user(), 'push.deleted', $title, $id);
 
         return response()->json(['data' => null]);
     }
@@ -91,6 +105,14 @@ class PushCampaignController extends Controller
             'failure_count' => $result->failed,
             'failure_reason' => $result->reason,
         ]);
+
+        Activity::record(
+            $request->user(),
+            'push.sent',
+            $record->title,
+            $record->getKey(),
+            ['app' => $model->name, 'reached' => $result->delivered],
+        );
 
         return response()->json([
             'data' => new PushCampaignResource($record->fresh()),

@@ -11,6 +11,7 @@ use App\Http\Resources\UserResource;
 use App\Models\Organization;
 use App\Models\OrganizationInvite;
 use App\Models\User;
+use App\Support\Activity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +39,15 @@ class AuthController extends Controller
 
             return [$user, $organization];
         });
+
+        // The first line of the account's history, so the log reads from the
+        // beginning rather than from whenever someone next changed something.
+        Activity::record(
+            $user,
+            'account.started',
+            $organization->name,
+            $organization->getKey(),
+        );
 
         return $this->session($user, $organization, 201);
     }
@@ -100,6 +110,12 @@ class AuthController extends Controller
 
             return $user;
         });
+
+        // The new member is the actor: they are the one who acted, and the
+        // owner who invited them is already recorded from when they did.
+        Activity::record($user, 'team.joined', $user->name, $user->getKey(), [
+            'role' => $user->role,
+        ]);
 
         return $this->session($user, $invite->organization, 201);
     }

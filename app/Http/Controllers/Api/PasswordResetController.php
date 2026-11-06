@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\ForgotPasswordRequest;
 use App\Http\Requests\ResetPasswordRequest;
 use App\Models\User;
+use App\Support\Activity;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Password;
@@ -32,6 +33,10 @@ class PasswordResetController extends Controller
                 $user->forceFill(['password' => $password])->save();
 
                 $user->tokens()->delete();
+
+                // Recorded without anyone signed in: whoever held the link is
+                // the actor, and the team should be able to see it happened.
+                Activity::record($user, 'account.password', null, $user->getKey());
 
                 event(new PasswordReset($user));
             },

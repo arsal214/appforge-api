@@ -179,4 +179,15 @@ class AuthTest extends TestCase
             'password' => 'wrong',
         ])->assertStatus(429);
     }
+
+    #[Test]
+    public function a_browser_that_is_not_logged_in_is_told_so_rather_than_crashing(): void
+    {
+        $this->get('/api/apps', ['Accept' => 'text/html'])
+            ->assertUnauthorized();
+
+        $this->getJson('/api/apps')
+            ->assertUnauthorized()
+            ->assertJson(['message' => 'Unauthenticated.']);
+    }
 }

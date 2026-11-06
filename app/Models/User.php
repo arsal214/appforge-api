@@ -28,7 +28,7 @@ class User extends Authenticatable
      * both, which is what makes 'staff' worth having.
      */
     private const ABILITIES = [
-        'owner' => ['team', 'build'],
+        'owner' => ['team', 'build', 'account'],
         'editor' => ['build'],
         'staff' => [],
     ];

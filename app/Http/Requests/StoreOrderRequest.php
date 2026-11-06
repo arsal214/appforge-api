@@ -36,6 +36,7 @@ class StoreOrderRequest extends FormRequest
             'kind' => ['nullable', Rule::in(Order::kinds())],
             'formId' => ['nullable', 'string', 'max:64'],
             'platform' => ['nullable', 'in:ios,android'],
+            'idempotencyKey' => ['nullable', 'string', 'max:64'],
         ];
     }
 

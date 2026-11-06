@@ -7,6 +7,7 @@ use App\Http\Requests\StoreAppRequest;
 use App\Http\Requests\UpdateAppRequest;
 use App\Http\Resources\AppResource;
 use App\Models\App as ClientApp;
+use App\Support\Activity;
 use App\Support\Templates;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\JsonResponse;
@@ -52,6 +53,8 @@ class AppController extends Controller
             'accent_color' => $template['accentColor'],
         ]);
 
+        Activity::record($request->user(), 'app.created', $app->name, $app->getKey());
+
         return (new AppResource($app))->response()->setStatusCode(201);
     }
 
@@ -80,7 +83,17 @@ class AppController extends Controller
             $changes['business_profile_id'] = $request->validated('businessProfileId');
         }
 
+        $renamed = array_key_exists('name', $changes)
+            && $changes['name'] !== $model->name;
+
         $model->update($changes);
+
+        Activity::record(
+            $request->user(),
+            $renamed ? 'app.renamed' : 'app.changed',
+            $model->name,
+            $model->getKey(),
+        );
 
         return new AppResource($model);
     }
@@ -95,6 +108,8 @@ class AppController extends Controller
 
         $model->delete();
 
+        Activity::record($request->user(), 'app.binned', $model->name, $model->getKey());
+
         return response()->json(['data' => null], 200);
     }
 
@@ -103,13 +118,22 @@ class AppController extends Controller
         $model = $this->apps($request)->onlyTrashed()->findOrFail($app);
         $model->restore();
 
+        Activity::record($request->user(), 'app.restored', $model->name, $model->getKey());
+
         return new AppResource($model);
     }
 
     public function forceDestroy(Request $request, string $app): JsonResponse
     {
         $model = $this->apps($request)->onlyTrashed()->findOrFail($app);
+        $name = $model->name;
+        $id = $model->getKey();
+
         $model->forceDelete();
+
+        // Recorded after the row is gone, with the name it had: the app it
+        // names cannot be looked up any more, which is the whole point.
+        Activity::record($request->user(), 'app.deleted', $name, $id);
 
         return response()->json(['data' => null], 200);
     }
