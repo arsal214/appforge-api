@@ -8,6 +8,7 @@ use App\Http\Resources\OrganizationInviteResource;
 use App\Http\Resources\UserResource;
 use App\Models\OrganizationInvite;
 use App\Models\User;
+use App\Support\Activity;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -46,6 +47,14 @@ class TeamController extends Controller
             ],
         );
 
+        Activity::record(
+            $request->user(),
+            'team.invited',
+            $invite->email,
+            $invite->getKey(),
+            ['role' => $invite->role],
+        );
+
         return response()->json([
             'data' => [
                 'invite' => new OrganizationInviteResource($invite),
@@ -60,7 +69,12 @@ class TeamController extends Controller
 
     public function destroy(Request $request, string $invite): JsonResponse
     {
-        $request->user()->organization->invites()->findOrFail($invite)->delete();
+        $record = $request->user()->organization->invites()->findOrFail($invite);
+        $email = $record->email;
+
+        $record->delete();
+
+        Activity::record($request->user(), 'team.invite_cancelled', $email, $invite);
 
         return response()->json(['data' => null]);
     }
@@ -72,7 +86,16 @@ class TeamController extends Controller
         ]);
 
         $member = $this->member($request, $user);
+        $was = $member->role;
         $member->update(['role' => $validated['role']]);
+
+        Activity::record(
+            $request->user(),
+            'team.role_changed',
+            $member->name,
+            $member->getKey(),
+            ['from' => $was, 'to' => $member->role],
+        );
 
         return new UserResource($member);
     }
@@ -84,8 +107,15 @@ class TeamController extends Controller
         // Their tokens outlive the row otherwise: personal_access_tokens is a
         // polymorphic table with no foreign key, so a deleted member would keep
         // a working login until the token expired.
+        $name = $member->name;
+        $id = $member->getKey();
+
         $member->tokens()->delete();
         $member->delete();
+
+        // After the row: `actor_id` is set null when a user goes, and the
+        // subject is a name kept as text for exactly this reason.
+        Activity::record($request->user(), 'team.removed', $name, $id);
 
         return response()->json(['data' => null]);
     }

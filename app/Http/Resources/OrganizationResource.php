@@ -17,6 +17,7 @@ class OrganizationResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'slug' => $this->slug,
+            'closingAt' => Iso8601::from($this->closing_at),
             'createdAt' => Iso8601::from($this->created_at),
         ];
     }

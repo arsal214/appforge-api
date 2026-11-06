@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['app_id', 'number', 'status', 'kind', 'form_id', 'is_test', 'lines', 'details', 'total', 'platform'])]
+#[Fillable(['app_id', 'number', 'status', 'kind', 'form_id', 'is_test', 'lines', 'details', 'total', 'platform', 'idempotency_key'])]
 class Order extends Model
 {
     use HasPrefixedUlid;
@@ -31,6 +31,12 @@ class Order extends Model
     public static function idPrefix(): string
     {
         return 'ord';
+    }
+
+    /** How this record is named in the activity log and the panel. */
+    public function label(): string
+    {
+        return ucfirst($this->kind).' #'.$this->number;
     }
 
     protected function casts(): array

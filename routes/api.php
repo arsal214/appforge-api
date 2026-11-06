@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\PublicConfigController;
 use App\Http\Controllers\Api\PushCampaignController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\TemplateController;
+use App\Http\Controllers\Api\TenantDataController;
 use App\Http\Controllers\Api\UploadController;
 use Illuminate\Support\Facades\Route;
 
@@ -116,5 +117,15 @@ Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
         Route::delete('team/members/{user}', [TeamController::class, 'destroyMember']);
 
         Route::patch('organization', [OrganizationController::class, 'update']);
+    });
+
+    Route::middleware('allow:account')->group(function () {
+        Route::get('account/export', [TenantDataController::class, 'export'])
+            ->middleware('throttle:4,1');
+
+        Route::get('account/activity', [TenantDataController::class, 'activity']);
+
+        Route::delete('organization', [TenantDataController::class, 'destroy']);
+        Route::post('organization/reopen', [TenantDataController::class, 'reopen']);
     });
 });

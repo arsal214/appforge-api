@@ -9,6 +9,8 @@ use App\Mail\OrderArrived;
 use App\Models\App as ClientApp;
 use App\Models\Order;
 use App\Models\User;
+use App\Support\Activity;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +35,9 @@ class OrderController extends Controller
 
         $order = $this->record($app, $request, test: false);
 
-        $this->tellTheShop($order);
+        if ($order->wasRecentlyCreated) {
+            $this->tellTheShop($order);
+        }
 
         return response()->json(['data' => ['number' => $order->number]], 201);
     }
@@ -44,14 +48,31 @@ class OrderController extends Controller
 
         $order = $this->record($model->getKey(), $request, test: true);
 
-        $this->tellTheShop($order);
+        if ($order->wasRecentlyCreated) {
+            $this->tellTheShop($order);
+
+            Activity::record(
+                $request->user(),
+                'order.test_made',
+                $model->name,
+                $model->getKey(),
+            );
+        }
 
         return (new OrderResource($order))->response()->setStatusCode(201);
     }
 
     public function clearTests(Request $request, string $app): JsonResponse
     {
-        $this->findOwned($request, $app)->orders()->where('is_test', true)->delete();
+        $model = $this->findOwned($request, $app);
+        $model->orders()->where('is_test', true)->delete();
+
+        Activity::record(
+            $request->user(),
+            'order.tests_cleared',
+            $model->name,
+            $model->getKey(),
+        );
 
         return response()->json(['data' => null]);
     }
@@ -87,23 +108,51 @@ class OrderController extends Controller
 
     private function record(string $appId, StoreOrderRequest $request, bool $test): Order
     {
-        return DB::transaction(function () use ($appId, $request, $test) {
+        $key = $request->validated('idempotencyKey');
+
+        return DB::transaction(function () use ($appId, $request, $test, $key) {
+            $replay = $key === null ? null : $this->sentBefore($appId, $key);
+
+            if ($replay !== null) {
+                return $replay;
+            }
+
             $taken = (int) Order::where('app_id', $appId)->lockForUpdate()->max('number');
 
-            return Order::create([
-                'app_id' => $appId,
-                'number' => $taken + 1,
-                'status' => 'new',
-                'kind' => $request->validated('kind')
-                    ?? ($request->validated('lines') === [] ? 'booking' : 'order'),
-                'form_id' => $request->validated('formId'),
-                'is_test' => $test,
-                'lines' => $request->validated('lines'),
-                'details' => $request->validated('details'),
-                'total' => $request->validated('total'),
-                'platform' => $request->validated('platform'),
-            ]);
+            try {
+                return Order::create([
+                    'app_id' => $appId,
+                    'number' => $taken + 1,
+                    'status' => 'new',
+                    'kind' => $request->validated('kind')
+                        ?? ($request->validated('lines') === [] ? 'booking' : 'order'),
+                    'form_id' => $request->validated('formId'),
+                    'is_test' => $test,
+                    'lines' => $request->validated('lines'),
+                    'details' => $request->validated('details'),
+                    'total' => $request->validated('total'),
+                    'platform' => $request->validated('platform'),
+                    'idempotency_key' => $key,
+                ]);
+            } catch (UniqueConstraintViolationException $e) {
+                // Two copies of one send arriving at once: the loser of the
+                // insert reads the winner's row rather than failing the phone.
+                $kept = $key === null ? null : $this->sentBefore($appId, $key);
+
+                if ($kept === null) {
+                    throw $e;
+                }
+
+                return $kept;
+            }
         });
+    }
+
+    private function sentBefore(string $appId, string $key): ?Order
+    {
+        return Order::where('app_id', $appId)
+            ->where('idempotency_key', $key)
+            ->first();
     }
 
     public function index(Request $request, string $app): JsonResponse
@@ -166,6 +215,14 @@ class OrderController extends Controller
         ]);
 
         $record->update(['status' => $validated['status']]);
+
+        Activity::record(
+            $request->user(),
+            'order.worked',
+            $record->label(),
+            $record->getKey(),
+            ['status' => $record->status],
+        );
 
         return new OrderResource($record);
     }

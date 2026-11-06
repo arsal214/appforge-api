@@ -7,6 +7,7 @@ use App\Http\Resources\AppVersionResource;
 use App\Http\Resources\Iso8601;
 use App\Models\App as ClientApp;
 use App\Models\AppVersion;
+use App\Support\Activity;
 use App\Support\Config\ConfigValidator;
 use App\Support\MediaUrl;
 use AppForge\Schema\Contract;
@@ -56,6 +57,14 @@ class AppVersionController extends Controller
             $model->update(['status' => 'ready']);
         }
 
+        Activity::record(
+            $request->user(),
+            'version.published',
+            "{$model->name} v{$version->version}",
+            $model->getKey(),
+            ['version' => $version->version],
+        );
+
         return (new AppVersionResource($version))->response()->setStatusCode(201);
     }
 
@@ -90,6 +99,14 @@ class AppVersionController extends Controller
         if ($model->status === 'rejected') {
             $model->update(['status' => 'draft']);
         }
+
+        Activity::record(
+            $request->user(),
+            'version.restored',
+            "{$model->name} v{$snapshot->version}",
+            $model->getKey(),
+            ['version' => $snapshot->version],
+        );
 
         return response()->json([
             'data' => [
