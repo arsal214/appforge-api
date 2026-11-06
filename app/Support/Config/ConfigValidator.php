@@ -571,6 +571,7 @@ class ConfigValidator
             'booking_cta' => $this->bookingCtaProps($props, $path),
             'contact_block' => $this->contactBlockProps($props, $path),
             'divider' => $this->dividerProps($props, $path),
+            'custom_html' => $this->customHtmlProps($props, $path),
             'feature_list' => $this->featureListProps($props, $path),
             'faq' => $this->faqProps($props, $path),
             'link_list' => $this->linkListProps($props, $path),
@@ -1337,6 +1338,87 @@ class ConfigValidator
         $variant = $p['variant'] ?? null;
         if ($variant !== null && ! in_array($variant, Contract::vocabulary('dividerVariants'), true)) {
             $this->add("{$path}.variant", 'Not a separator we draw.');
+        }
+    }
+
+    /**
+     * A block of the customer's own markup.
+     *
+     * The product rule is that a config never carries code — a runtime that
+     * executes strings from a server is remote code execution in every
+     * installed copy and an App Store rejection. Markup and styling are
+     * content, the same as the text and image paths already in here, so the
+     * line is drawn at anything that can *run*.
+     *
+     * These are refused rather than stripped. Quietly removing half of what
+     * somebody wrote gives them a block that looks broken for no stated
+     * reason; naming it means they can fix it.
+     *
+     * The renderer is the second half of this: it runs with JavaScript off,
+     * so a miss here still cannot execute. Neither half is trusted alone.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function customHtmlProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.custom_html'));
+
+        $this->requireText($p['html'] ?? null, "{$path}.html", Contract::limit('maxCustomHtml'));
+        $this->optionalText($p, 'css', $path, Contract::limit('maxCustomCss'));
+
+        foreach (['html' => 'maxCustomHtml', 'css' => 'maxCustomCss'] as $key => $_) {
+            $value = $p[$key] ?? null;
+
+            if (is_string($value)) {
+                $this->refuseAnythingThatRuns($value, "{$path}.{$key}");
+            }
+        }
+
+        $height = $p['height'] ?? null;
+
+        if ($height !== null) {
+            $min = Contract::limit('minCustomHeight');
+            $max = Contract::limit('maxCustomHeight');
+
+            if (! is_int($height) || $height < $min || $height > $max) {
+                $this->add(
+                    "{$path}.height",
+                    "Expected a whole number of pixels between {$min} and {$max}.",
+                );
+            }
+        }
+    }
+
+    /**
+     * The closed list of things that turn markup into code.
+     *
+     * Matched on the raw string rather than a parsed tree on purpose: a parser
+     * that disagrees with the one in the phone's web view is a hole, and the
+     * safe answer to "this looks like a script" is no, not a second opinion.
+     */
+    private function refuseAnythingThatRuns(string $value, string $path): void
+    {
+        $banned = [
+            '/<\s*script\b/i' => 'Scripts are not allowed here. This block can style and lay out, but it cannot run code.',
+            '/<\s*(iframe|object|embed|applet|frame|frameset)\b/i' => 'Embedding another page or plugin is not allowed here.',
+            '/<\s*(form|input|button|textarea|select)\b/i' => 'Use a Form block to collect answers — a form here could not send anywhere.',
+            '/<\s*(link|meta|base)\b/i' => 'This block cannot change the page around it.',
+            '/\son[a-z]+\s*=/i' => 'Attributes like onclick run code, so they are not allowed.',
+            '/javascript\s*:/i' => 'A javascript: address runs code, so it is not allowed.',
+            '/vbscript\s*:/i' => 'A vbscript: address runs code, so it is not allowed.',
+            '/<\s*\/?\s*(html|head|body)\b/i' => 'Write only the markup for this block, not a whole page.',
+            '/@import\b/i' => 'This block cannot pull in another stylesheet.',
+            '/expression\s*\(/i' => 'CSS expressions run code, so they are not allowed.',
+            '/behaviou?r\s*:/i' => 'CSS behaviours run code, so they are not allowed.',
+            '/-moz-binding/i' => 'This binds code to an element, so it is not allowed.',
+        ];
+
+        foreach ($banned as $pattern => $message) {
+            if (preg_match($pattern, $value) === 1) {
+                $this->add($path, $message);
+
+                return;
+            }
         }
     }
 

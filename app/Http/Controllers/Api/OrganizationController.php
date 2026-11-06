@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateOrganizationRequest;
 use App\Http\Resources\OrganizationResource;
+use App\Support\Activity;
 use Illuminate\Support\Str;
 
 class OrganizationController extends Controller
@@ -17,6 +18,13 @@ class OrganizationController extends Controller
             'name' => trim($request->validated('name')),
             'slug' => Str::slug($request->validated('name')),
         ]);
+
+        Activity::record(
+            $request->user(),
+            'business.renamed',
+            $organization->name,
+            $organization->getKey(),
+        );
 
         return new OrganizationResource($organization);
     }

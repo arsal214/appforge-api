@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UploadResource;
 use App\Models\Upload;
+use App\Support\Activity;
 use App\Support\MediaReferences;
 use App\Support\MediaUrl;
 use AppForge\Schema\Contract;
@@ -99,6 +100,14 @@ class UploadController extends Controller
             'bytes' => $file->getSize(),
         ]);
 
+        Activity::record(
+            $request->user(),
+            'image.added',
+            $upload->name,
+            $upload->getKey(),
+            ['bytes' => $upload->bytes],
+        );
+
         return response()->json([
             'data' => [
                 'url' => MediaUrl::absolute($path),
@@ -107,7 +116,7 @@ class UploadController extends Controller
         ], 201);
     }
 
-    public function destroy(Upload $upload): JsonResponse
+    public function destroy(Request $request, Upload $upload): JsonResponse
     {
         $inUse = MediaReferences::using($upload->reference(), $upload->organization_id);
 
@@ -120,9 +129,14 @@ class UploadController extends Controller
         }
 
         $path = $upload->path;
+        $name = $upload->name;
+        $id = $upload->getKey();
+
         $upload->delete();
 
         Storage::disk('public')->delete($path);
+
+        Activity::record($request->user(), 'image.removed', $name, $id);
 
         return response()->json(['data' => null], 200);
     }

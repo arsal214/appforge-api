@@ -47,6 +47,12 @@ final class CredentialType
             ?? throw new VaultException("Unknown credential type [{$type}].");
     }
 
+    public static function label(string $type): string
+    {
+        return self::ALL[$type]['label']
+            ?? throw new VaultException("Unknown credential type [{$type}].");
+    }
+
     public static function hintFor(string $type, array $values): ?string
     {
         $field = self::ALL[$type]['secretField'] ?? null;

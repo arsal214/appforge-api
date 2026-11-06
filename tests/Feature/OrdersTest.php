@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -607,5 +608,78 @@ class OrdersTest extends TestCase
 
         $app->forceDelete();
         $this->assertDatabaseCount('orders', 0);
+    }
+
+    #[Test]
+    public function a_phone_that_sends_one_order_twice_only_ever_places_it_once(): void
+    {
+        Mail::fake();
+
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+        $order = $this->order(['idempotencyKey' => 'ord-attempt-1']);
+
+        $first = $this->postJson("/api/public/apps/{$app->id}/orders", $order)
+            ->assertCreated();
+
+        $second = $this->postJson("/api/public/apps/{$app->id}/orders", $order)
+            ->assertCreated();
+
+        $this->assertSame($first->json('data.number'), $second->json('data.number'));
+        $this->assertDatabaseCount('orders', 1);
+
+        Mail::assertQueuedCount(1);
+    }
+
+    #[Test]
+    public function two_different_orders_are_both_kept_even_from_one_phone(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order(['idempotencyKey' => 'first']))
+            ->assertCreated();
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order(['idempotencyKey' => 'second']))
+            ->assertCreated();
+
+        $this->assertDatabaseCount('orders', 2);
+    }
+
+    #[Test]
+    public function one_phones_send_key_cannot_block_another_apps_order(): void
+    {
+        $mine = App::factory()->create();
+        $theirs = App::factory()->create();
+
+        $this->postJson("/api/public/apps/{$mine->id}/orders", $this->order(['idempotencyKey' => 'same']))
+            ->assertCreated();
+        $this->postJson("/api/public/apps/{$theirs->id}/orders", $this->order(['idempotencyKey' => 'same']))
+            ->assertCreated();
+
+        $this->assertDatabaseCount('orders', 2);
+    }
+
+    #[Test]
+    public function an_order_sent_without_a_key_is_still_taken(): void
+    {
+        $app = App::factory()->create();
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())
+            ->assertCreated();
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order())
+            ->assertCreated();
+
+        $this->assertDatabaseCount('orders', 2);
+    }
+
+    #[Test]
+    public function a_send_key_longer_than_the_column_is_refused(): void
+    {
+        $app = App::factory()->create();
+
+        $this->postJson(
+            "/api/public/apps/{$app->id}/orders",
+            $this->order(['idempotencyKey' => str_repeat('k', 65)]),
+        )->assertJsonValidationErrors('idempotencyKey');
     }
 }
