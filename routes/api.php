@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AppController;
 use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BusinessProfileController;
+use App\Http\Controllers\Api\CatalogueImportController;
 use App\Http\Controllers\Api\CredentialController;
 use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\EventController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TenantDataController;
 use App\Http\Controllers\Api\UploadController;
+use App\Http\Controllers\Api\WaitlistController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -53,6 +55,9 @@ Route::middleware('throttle:public-events')
 Route::middleware('throttle:public-orders')
     ->post('public/apps/{app}/orders', [OrderController::class, 'store']);
 
+Route::middleware('throttle:public-waitlist')
+    ->post('public/waitlist', [WaitlistController::class, 'store']);
+
 Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
     Route::get('apps', [AppController::class, 'index']);
     Route::get('apps/trashed', [AppController::class, 'trashed']);
@@ -74,6 +79,9 @@ Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
         Route::get('apps/{app}/credentials', [CredentialController::class, 'index']);
         Route::put('apps/{app}/credentials/{type}', [CredentialController::class, 'store']);
         Route::delete('apps/{app}/credentials/{type}', [CredentialController::class, 'destroy']);
+
+        Route::post('apps/{app}/catalogue/import', [CatalogueImportController::class, 'store'])
+            ->middleware('throttle:catalogue-import');
     });
 
     Route::get('apps/{app}/push', [PushCampaignController::class, 'index']);

@@ -7,19 +7,6 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/**
- * What someone on the team did to the account.
- *
- * This is the customer's own record, which is why it is cascade-deleted with
- * the organisation. `audit_logs` is the other half and the opposite thing: our
- * record of what *our* staff did, which survives a tenant erasure because
- * otherwise the erasure request destroys the evidence of what was done.
- *
- * Only decisions are kept, never keystrokes. A draft config save fires every
- * second and a half while someone is typing, so recording those would write
- * thousands of rows a day and bury the one line anybody ever wants to read.
- * Publishing a version is the decision; editing the draft is the work.
- */
 #[Fillable([
     'organization_id', 'actor_id', 'actor_name', 'actor_email',
     'action', 'subject', 'subject_id', 'context',
@@ -30,14 +17,6 @@ class AccountEvent extends Model
 
     public const UPDATED_AT = null;
 
-    /**
-     * Every action that can be recorded, and the sentence the panel shows for
-     * it. A closed list, for the same reason the action vocabulary in the
-     * config is closed: a free-text action is a string nobody can search,
-     * translate or test.
-     *
-     * `{subject}` is filled with the name the thing had at the time.
-     */
     public const ACTIONS = [
         'app.created' => 'created the app {subject}',
         'app.renamed' => 'renamed an app to {subject}',
@@ -47,6 +26,7 @@ class AccountEvent extends Model
         'app.deleted' => 'deleted {subject} for good',
         'version.published' => 'published {subject}',
         'version.restored' => 'rolled {subject} back to an earlier version',
+        'catalogue.imported' => 'imported the products for {subject}',
         'credential.saved' => 'connected {subject}',
         'credential.removed' => 'disconnected {subject}',
         'team.invited' => 'invited {subject}',
@@ -74,17 +54,13 @@ class AccountEvent extends Model
         'push.deleted' => 'deleted the notification {subject}',
     ];
 
-    /**
-     * The filter at the top of the list, and the only place that decides
-     * which line belongs under which heading. A test fails if an action in
-     * ACTIONS is missing here, or is claimed by two groups at once.
-     */
     public const GROUPS = [
         'apps' => [
             'app.created', 'app.renamed', 'app.changed', 'app.binned',
             'app.restored', 'app.deleted',
             'version.published', 'version.restored',
             'credential.saved', 'credential.removed',
+            'catalogue.imported',
             'push.written', 'push.sent', 'push.deleted',
         ],
         'orders' => [
