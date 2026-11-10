@@ -30,6 +30,12 @@ class RateLimitServiceProvider extends ServiceProvider
             ];
         });
 
+        RateLimiter::for('public-waitlist', fn (Request $request): Limit => Limit::perMinute(5)
+            ->by('public-waitlist:'.$request->ip()));
+
+        RateLimiter::for('catalogue-import', fn (Request $request): Limit => Limit::perMinute(6)
+            ->by('catalogue-import:'.($request->user()?->organization_id ?? $request->ip())));
+
         $this->perApp('public-config', 120);
         $this->perApp('public-devices', 30);
         $this->perApp('public-events', 60);
