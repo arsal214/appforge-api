@@ -39,6 +39,8 @@ class App extends Model
         'rejected',
     ];
 
+    public const BIN_DAYS = 30;
+
     public static function idPrefix(): string
     {
         return 'app';
