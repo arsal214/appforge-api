@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\OrganizationController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PublicConfigController;
 use App\Http\Controllers\Api\PushCampaignController;
+use App\Http\Controllers\Api\SiteEventController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Controllers\Api\TemplateController;
 use App\Http\Controllers\Api\TenantDataController;
@@ -57,6 +58,9 @@ Route::middleware('throttle:public-orders')
 
 Route::middleware('throttle:public-waitlist')
     ->post('public/waitlist', [WaitlistController::class, 'store']);
+
+Route::middleware('throttle:public-site-events')
+    ->post('public/site-events', [SiteEventController::class, 'store']);
 
 Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
     Route::get('apps', [AppController::class, 'index']);
