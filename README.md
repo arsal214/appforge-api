@@ -7,6 +7,9 @@ This repo **owns the database schema for the whole AppForge estate**.
 `database/migrations` directory. Two repos migrating one schema produces
 divergence that nobody can bisect, in production, at the worst possible moment.
 
+**New here? Read [START-HERE.md](START-HERE.md) first.** It sets up all five
+repos from nothing, in order, and the order matters.
+
 ## Running it locally
 
 ```bash
