@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AppConfigController;
 use App\Http\Controllers\Api\AppController;
+use App\Http\Controllers\Api\AppUserController;
 use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BusinessProfileController;
@@ -55,6 +56,15 @@ Route::middleware('throttle:public-events')
 
 Route::middleware('throttle:public-orders')
     ->post('public/apps/{app}/orders', [OrderController::class, 'store']);
+
+Route::middleware('throttle:public-accounts')->group(function () {
+    Route::post('public/apps/{app}/users', [AppUserController::class, 'register']);
+    Route::post('public/apps/{app}/sessions', [AppUserController::class, 'login']);
+    Route::get('public/apps/{app}/me', [AppUserController::class, 'me']);
+    Route::delete('public/apps/{app}/me', [AppUserController::class, 'destroy']);
+    Route::get('public/apps/{app}/me/orders', [AppUserController::class, 'orders']);
+    Route::delete('public/apps/{app}/sessions/current', [AppUserController::class, 'logout']);
+});
 
 Route::middleware('throttle:public-waitlist')
     ->post('public/waitlist', [WaitlistController::class, 'store']);

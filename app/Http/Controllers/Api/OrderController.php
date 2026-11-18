@@ -9,6 +9,7 @@ use App\Mail\OrderArrived;
 use App\Models\App as ClientApp;
 use App\Models\Order;
 use App\Models\User;
+use App\Support\Accounts\AppSession;
 use App\Support\Activity;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -122,6 +123,10 @@ class OrderController extends Controller
             try {
                 return Order::create([
                     'app_id' => $appId,
+
+                    // A token that no longer works is not a reason to
+                    // refuse the order: it goes in without a name on it.
+                    'app_user_id' => $test ? null : AppSession::user($request, $appId)?->getKey(),
                     'number' => $taken + 1,
                     'status' => 'new',
                     'kind' => $request->validated('kind')
@@ -167,7 +172,7 @@ class OrderController extends Controller
 
         // By number, not created_at: the column holds whole seconds, so two
         // orders placed in the same second would come back in an arbitrary
-        $query = $owned->orders()->orderByDesc('number');
+        $query = $owned->orders()->with('appUser')->orderByDesc('number');
 
         foreach (['status', 'kind'] as $field) {
             if (($validated[$field] ?? null) !== null) {

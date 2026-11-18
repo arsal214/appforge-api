@@ -435,6 +435,14 @@ class ActivityTest extends TestCase
             // someone is typing; publishing the result is the decision, and
             // that is recorded.
             'PUT apps/{app}/config',
+
+            // The shop's own customers making and using an account in the
+            // app. The history is what the team did to the business, and
+            // none of the team did this.
+            'POST public/apps/{app}/users',
+            'POST public/apps/{app}/sessions',
+            'DELETE public/apps/{app}/sessions/current',
+            'DELETE public/apps/{app}/me',
         ];
 
         $routes = file_get_contents(base_path('routes/api.php'));

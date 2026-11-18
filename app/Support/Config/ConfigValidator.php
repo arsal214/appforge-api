@@ -586,6 +586,7 @@ class ConfigValidator
             'group' => $this->groupProps($props, $path),
             'item_detail' => $this->itemDetailProps($props, $path),
             'cart' => $this->cartProps($props, $path),
+            'account' => $this->accountProps($props, $path),
             default => $this->add($path, 'Unknown section type.'),
         };
     }
@@ -1209,6 +1210,15 @@ class ConfigValidator
         $this->optionalText($p, 'emptyText', $path, Contract::limit('maxShortText'));
         $this->optionalText($p, 'ctaLabel', $path, 40);
         $this->optionalAction($p, 'ctaAction', $path);
+    }
+
+    /** @param array<string, mixed> $p */
+    private function accountProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.account'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+        $this->optionalText($p, 'note', $path, Contract::limit('maxShortText'));
+        $this->optionalUrl($p, 'privacyUrl', $path);
     }
 
     /** @param array<string, mixed> $p */
