@@ -39,6 +39,20 @@ class RateLimitServiceProvider extends ServiceProvider
         RateLimiter::for('public-site-events', fn (Request $request): Limit => Limit::perMinute(60)
             ->by('public-site-events:'.$request->ip()));
 
+        RateLimiter::for('public-accounts', function (Request $request): array {
+            $app = $request->route('app') ?? 'none';
+            $limits = [Limit::perMinute(30)->by("public-accounts:{$app}:".$request->ip())];
+
+            // A second, tighter bucket per email: guessing one person's
+            // password stays slow however many addresses it comes from.
+            if (is_string($request->input('email'))) {
+                $email = sha1(strtolower(trim($request->input('email'))));
+                $limits[] = Limit::perMinute(5)->by("public-accounts:{$app}:{$email}");
+            }
+
+            return $limits;
+        });
+
         $this->perApp('public-config', 120);
         $this->perApp('public-devices', 30);
         $this->perApp('public-events', 60);

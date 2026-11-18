@@ -59,6 +59,12 @@ class TenantDataTest extends TestCase
             'details' => [['label' => 'Phone', 'value' => '+44 7700 900123', 'kind' => 'phone']],
         ])->assertCreated();
 
+        $this->postJson("/api/public/apps/{$app->id}/users", [
+            'name' => 'Sam Carter',
+            'email' => 'sam@example.com',
+            'password' => 'a-long-enough-password',
+        ])->assertCreated();
+
         $this->postJson("/api/public/apps/{$app->id}/devices", [
             'token' => self::PUSH_TOKEN,
             'platform' => 'android',
@@ -306,6 +312,10 @@ class TenantDataTest extends TestCase
                 'sessions' => DB::table($table)->where('user_id', $owner->id)->count(),
                 'users' => DB::table($table)->where('organization_id', $owner->organization_id)->count(),
                 'account_events', 'apps', 'business_profiles', 'uploads', 'organization_invites', 'credential_accesses' => DB::table($table)->where('organization_id', $owner->organization_id)->count(),
+
+                // Reached through the app user rather than the app, and
+                // this test furnishes the only one there is.
+                'app_user_tokens' => DB::table($table)->count(),
                 default => DB::table($table)->where('app_id', $app->id)->count(),
             };
 

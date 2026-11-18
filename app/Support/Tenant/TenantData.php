@@ -44,6 +44,8 @@ class TenantData
         'app_configs' => 'cascade',
         'app_credentials' => 'cascade',
         'app_devices' => 'cascade',
+        'app_user_tokens' => 'cascade',
+        'app_users' => 'cascade',
         'app_event_daily' => 'cascade',
         'app_versions' => 'cascade',
         'business_profiles' => 'cascade',
@@ -117,8 +119,20 @@ class TenantData
                 ])
                 ->all(),
             'records' => OrderResource::collection(
-                $app->orders()->orderBy('number')->get()
+                $app->orders()->with('appUser')->orderBy('number')->get()
             )->resolve(),
+            // The people who made an account in this app. Never a password
+            // or a token: the export is a file that leaves our control.
+            'customers' => DB::table('app_users')
+                ->where('app_id', $app->getKey())
+                ->orderBy('created_at')
+                ->get(['name', 'email', 'created_at'])
+                ->map(fn ($row) => [
+                    'name' => $row->name,
+                    'email' => $row->email,
+                    'joinedAt' => $row->created_at,
+                ])
+                ->all(),
             'notifications' => PushCampaignResource::collection(
                 $app->pushCampaigns()->orderBy('created_at')->get()
             )->resolve(),

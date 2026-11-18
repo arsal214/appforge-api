@@ -72,7 +72,7 @@ class OrdersTest extends TestCase
         $this->assertCount(1, $data);
         $this->assertEqualsCanonicalizing([
             'id', 'appId', 'number', 'status', 'kind', 'formId', 'test', 'lines', 'details',
-            'total', 'platform', 'createdAt', 'updatedAt',
+            'total', 'platform', 'customer', 'createdAt', 'updatedAt',
         ], array_keys($data[0]));
 
         $this->assertSame('new', $data[0]['status']);

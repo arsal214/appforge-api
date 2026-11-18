@@ -25,6 +25,10 @@ class OrderResource extends JsonResource
             'details' => $this->details,
             'total' => $this->total,
             'platform' => $this->platform,
+            'customer' => $this->appUser === null ? null : [
+                'name' => $this->appUser->name,
+                'email' => $this->appUser->email,
+            ],
             'createdAt' => Iso8601::from($this->created_at),
             'updatedAt' => Iso8601::from($this->updated_at),
         ];
