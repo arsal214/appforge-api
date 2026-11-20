@@ -16,6 +16,7 @@ use App\Models\BusinessProfile;
 use App\Models\Organization;
 use App\Models\Upload;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -130,7 +131,9 @@ class TenantData
                 ->map(fn ($row) => [
                     'name' => $row->name,
                     'email' => $row->email,
-                    'joinedAt' => $row->created_at,
+                    'joinedAt' => $row->created_at === null
+                        ? null
+                        : Carbon::parse($row->created_at)->utc()->toIso8601ZuluString('millisecond'),
                 ])
                 ->all(),
             'notifications' => PushCampaignResource::collection(

@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AppDevice;
+use App\Support\PublicApp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class DeviceController extends Controller
 {
@@ -19,10 +19,7 @@ class DeviceController extends Controller
             'shellVersion' => ['nullable', 'string', 'max:32'],
         ]);
 
-        $exists = DB::table('apps')
-            ->where('id', $app)
-            ->whereNull('deleted_at')
-            ->exists();
+        $exists = PublicApp::exists($app);
 
         if ($exists) {
             AppDevice::updateOrCreate(

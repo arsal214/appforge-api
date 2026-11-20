@@ -57,6 +57,47 @@ class OrdersTest extends TestCase
     }
 
     #[Test]
+    public function the_tax_the_customer_was_shown_is_kept_with_the_order(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order([
+            'total' => '£34.20',
+            'tax' => 'VAT (20%) £5.70',
+        ]))->assertCreated();
+
+        $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->assertJsonPath('data.orders.0.total', '£34.20')
+            ->assertJsonPath('data.orders.0.tax', 'VAT (20%) £5.70');
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order([
+            'tax' => str_repeat('x', 81),
+        ]))->assertStatus(422)->assertJsonValidationErrors('tax');
+    }
+
+    #[Test]
+    public function an_order_says_whether_it_is_for_delivery_or_pickup(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order(['handover' => 'pickup']))
+            ->assertCreated();
+
+        $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->assertJsonPath('data.orders.0.handover', 'pickup');
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order(['handover' => 'drone']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('handover');
+    }
+
+    #[Test]
     public function the_order_payload_matches_the_panels_zod_schema(): void
     {
         $user = User::factory()->create();
@@ -72,8 +113,11 @@ class OrdersTest extends TestCase
         $this->assertCount(1, $data);
         $this->assertEqualsCanonicalizing([
             'id', 'appId', 'number', 'status', 'kind', 'formId', 'test', 'lines', 'details',
-            'total', 'platform', 'customer', 'createdAt', 'updatedAt',
+            'total', 'tax', 'handover', 'platform', 'customer', 'createdAt', 'updatedAt',
         ], array_keys($data[0]));
+
+        $this->assertNull($data[0]['tax'], 'an order sent without tax grew one');
+        $this->assertNull($data[0]['handover'], 'an order that never said became delivery or pickup');
 
         $this->assertSame('new', $data[0]['status']);
         $this->assertSame('28.50', $data[0]['total']);

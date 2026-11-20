@@ -60,6 +60,8 @@ Route::middleware('throttle:public-orders')
 Route::middleware('throttle:public-accounts')->group(function () {
     Route::post('public/apps/{app}/users', [AppUserController::class, 'register']);
     Route::post('public/apps/{app}/sessions', [AppUserController::class, 'login']);
+    Route::post('public/apps/{app}/password-resets', [AppUserController::class, 'forgot']);
+    Route::post('public/apps/{app}/password-resets/confirm', [AppUserController::class, 'reset']);
     Route::get('public/apps/{app}/me', [AppUserController::class, 'me']);
     Route::delete('public/apps/{app}/me', [AppUserController::class, 'destroy']);
     Route::get('public/apps/{app}/me/orders', [AppUserController::class, 'orders']);

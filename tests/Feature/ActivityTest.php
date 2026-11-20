@@ -441,6 +441,8 @@ class ActivityTest extends TestCase
             // none of the team did this.
             'POST public/apps/{app}/users',
             'POST public/apps/{app}/sessions',
+            'POST public/apps/{app}/password-resets',
+            'POST public/apps/{app}/password-resets/confirm',
             'DELETE public/apps/{app}/sessions/current',
             'DELETE public/apps/{app}/me',
         ];

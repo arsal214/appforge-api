@@ -53,17 +53,22 @@ class TenantDataTest extends TestCase
                 'config' => $this->validConfig(),
             ])->assertOk();
 
-        $this->postJson("/api/public/apps/{$app->id}/orders", [
-            'lines' => [['itemId' => 'i-1', 'title' => 'Margherita', 'price' => '12.00', 'quantity' => 1]],
-            'total' => '12.00',
-            'details' => [['label' => 'Phone', 'value' => '+44 7700 900123', 'kind' => 'phone']],
-        ])->assertCreated();
-
-        $this->postJson("/api/public/apps/{$app->id}/users", [
+        $customer = $this->postJson("/api/public/apps/{$app->id}/users", [
             'name' => 'Sam Carter',
             'email' => 'sam@example.com',
             'password' => 'a-long-enough-password',
-        ])->assertCreated();
+        ])->assertCreated()->json('data.token');
+
+        // Signed in, so the order hangs off the customer as well as the app.
+        $this->withHeader('Authorization', "Bearer {$customer}")
+            ->postJson("/api/public/apps/{$app->id}/orders", [
+                'lines' => [['itemId' => 'i-1', 'title' => 'Margherita', 'price' => '12.00', 'quantity' => 1]],
+                'total' => '12.00',
+                'details' => [['label' => 'Phone', 'value' => '+44 7700 900123', 'kind' => 'phone']],
+            ])->assertCreated();
+
+        $this->forgetAuthentication();
+        $this->withHeaders(['Authorization' => '']);
 
         $this->postJson("/api/public/apps/{$app->id}/devices", [
             'token' => self::PUSH_TOKEN,
