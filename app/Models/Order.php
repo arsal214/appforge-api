@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['app_id', 'app_user_id', 'number', 'status', 'kind', 'form_id', 'is_test', 'lines', 'details', 'total', 'platform', 'idempotency_key'])]
+#[Fillable(['app_id', 'app_user_id', 'number', 'status', 'kind', 'form_id', 'is_test', 'lines', 'details', 'total', 'tax', 'handover', 'platform', 'idempotency_key'])]
 class Order extends Model
 {
     use HasPrefixedUlid;

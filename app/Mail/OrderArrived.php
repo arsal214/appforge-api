@@ -34,7 +34,21 @@ class OrderArrived extends AppForgeMail
                 'order' => $this->order,
                 'lines' => $this->order->lines,
                 'details' => $this->order->details,
+                'plain' => self::plain(...),
             ],
         );
+    }
+
+    /**
+     * Everything in an order was typed on a phone by someone the shop has
+     * never met. Escaped for Markdown as well as HTML, so `[Confirm payment]
+     * (https://…)` in a delivery note reaches the owner as those characters
+     * and not as a link in their inbox.
+     */
+    public static function plain(mixed $value): string
+    {
+        $text = preg_replace('/\s+/u', ' ', (string) $value) ?? '';
+
+        return preg_replace('/([\\\\`*_{}\[\]()<>#+\-.!|~])/u', '\\\\$1', $text) ?? '';
     }
 }

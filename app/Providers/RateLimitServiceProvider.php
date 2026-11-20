@@ -45,9 +45,12 @@ class RateLimitServiceProvider extends ServiceProvider
 
             // A second, tighter bucket per email: guessing one person's
             // password stays slow however many addresses it comes from.
+            // Ten, not five: two wrong passwords, asking for a code and one
+            // mistyped code is an ordinary minute for someone locked out,
+            // and five told them to wait just as they got it right.
             if (is_string($request->input('email'))) {
                 $email = sha1(strtolower(trim($request->input('email'))));
-                $limits[] = Limit::perMinute(5)->by("public-accounts:{$app}:{$email}");
+                $limits[] = Limit::perMinute(10)->by("public-accounts:{$app}:{$email}");
             }
 
             return $limits;

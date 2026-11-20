@@ -4,14 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Iso8601;
+use App\Mail\AppPasswordCode;
 use App\Models\AppUser;
 use App\Models\Order;
 use App\Support\Accounts\AppSession;
+use App\Support\PublicApp;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -22,13 +27,32 @@ use Illuminate\Validation\ValidationException;
  */
 class AppUserController extends Controller
 {
-    // Checked when the email is unknown, so a miss costs the same time as a
-    // wrong password and the response time does not say which it was.
-    private const NOBODY = '$2y$12$yiO5TDHd.yeLN1JVvBbEI.nk9H/ZqKK9vNeBcIXHwkCt8Oa7f4V2q';
+    private static ?string $nobody = null;
+
+    /**
+     * Checked when the email is unknown, so a miss costs the same time as a
+     * wrong password and the response time does not say which it was. Made
+     * with the configured rounds, so it keeps matching if they change.
+     */
+    private static function nobody(): string
+    {
+        return self::$nobody ??= Hash::make(bin2hex(random_bytes(16)));
+    }
 
     // shortcut: the newest thirty and no paging. Add a `before` cursor,
     // as the panel's order list has, when a customer has ever sent more.
     private const ORDERS_SHOWN = 30;
+
+    // A code is six digits, so what keeps it from being guessed is how few
+    // guesses there are: five per code, five codes an hour, fifteen minutes
+    // each. Sustained, that is about one chance in seventeen hundred a day.
+    private const CODE_MINUTES = 15;
+
+    private const CODE_TRIES = 5;
+
+    private const CODES_PER_HOUR = 5;
+
+    private const RESEND_AFTER_SECONDS = 60;
 
     public function register(Request $request, string $app): JsonResponse
     {
@@ -75,7 +99,12 @@ class AppUserController extends Controller
 
         $user = AppUser::where('app_id', $app)->where('email', $validated['email'])->first();
 
-        if (! Hash::check($validated['password'], $user?->password ?? self::NOBODY) || $user === null) {
+        // Checked before the email comparison so a miss costs the same time.
+        // The comparison is exact because the column's collation is not:
+        // "àli@x.com" finds Ali, and has a rate-limit bucket of its own.
+        if (! Hash::check($validated['password'], $user?->password ?? self::nobody())
+            || $user === null
+            || $user->email !== $validated['email']) {
             throw ValidationException::withMessages([
                 'email' => ['That email and password do not match.'],
             ]);
@@ -84,8 +113,101 @@ class AppUserController extends Controller
         return $this->signedIn($user, 200);
     }
 
+    /**
+     * Emails a code for setting a new password. The answer is the same
+     * whether or not the email has an account here: this is not a way to
+     * find out who shops where.
+     */
+    public function forgot(Request $request, string $app): JsonResponse
+    {
+        $this->lowercaseEmail($request);
+
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email:rfc', 'max:190'],
+        ], [
+            'email.*' => 'Enter a valid email address.',
+        ]);
+
+        $this->appOrFail($app);
+
+        $user = AppUser::where('app_id', $app)->where('email', $validated['email'])->first();
+
+        if ($user !== null && $user->email === $validated['email']) {
+            $this->sendCode($user);
+        }
+
+        return response()->json(['data' => null], 202);
+    }
+
+    /**
+     * Sets the new password, signs this phone in and every other one out —
+     * a forgotten password is sometimes a lost phone.
+     */
+    public function reset(Request $request, string $app): JsonResponse
+    {
+        $this->lowercaseEmail($request);
+
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'max:190'],
+            'code' => ['required', 'string', 'max:20'],
+            'password' => ['required', 'string', Password::min(8), 'max:200'],
+        ], [
+            'email.*' => 'Enter a valid email address.',
+            'code.*' => 'Enter the code from the email.',
+            'password.*' => 'Use at least 8 characters.',
+        ]);
+
+        $this->appOrFail($app);
+
+        // Spaces and dashes are how people copy a code, not part of it.
+        $code = preg_replace('/\D/', '', $validated['code']) ?? '';
+
+        // Returned rather than thrown, so a wrong guess still counts: an
+        // exception inside would roll the attempt back with everything else.
+        $user = DB::transaction(function () use ($app, $validated, $code): ?AppUser {
+            $user = AppUser::where('app_id', $app)->where('email', $validated['email'])->first();
+
+            if ($user === null || $user->email !== $validated['email']) {
+                return null;
+            }
+
+            $reset = DB::table('app_user_resets')
+                ->where('app_user_id', $user->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            if ($reset === null
+                || Carbon::parse($reset->expires_at)->isPast()
+                || $reset->attempts >= self::CODE_TRIES) {
+                return null;
+            }
+
+            if (! hash_equals($reset->code_hash, self::codeHash($code))) {
+                DB::table('app_user_resets')->where('id', $reset->id)->increment('attempts');
+
+                return null;
+            }
+
+            DB::table('app_user_resets')->where('id', $reset->id)->delete();
+            DB::table('app_user_tokens')->where('app_user_id', $user->getKey())->delete();
+            $user->update(['password' => $validated['password']]);
+
+            return $user;
+        });
+
+        if ($user === null) {
+            throw ValidationException::withMessages([
+                'code' => ['That code is wrong or has run out. Ask for a new one.'],
+            ]);
+        }
+
+        return $this->signedIn($user, 200);
+    }
+
     public function me(Request $request, string $app): JsonResponse
     {
+        $this->appOrFail($app);
+
         $user = AppSession::user($request, $app);
 
         abort_if($user === null, 401, 'Sign in again.');
@@ -102,6 +224,8 @@ class AppUserController extends Controller
      */
     public function orders(Request $request, string $app): JsonResponse
     {
+        $this->appOrFail($app);
+
         $user = AppSession::user($request, $app);
 
         abort_if($user === null, 401, 'Sign in again.');
@@ -162,14 +286,44 @@ class AppUserController extends Controller
         ], $status);
     }
 
-    private function appOrFail(string $app): void
+    private function sendCode(AppUser $user): void
     {
-        $exists = DB::table('apps')
-            ->where('id', $app)
-            ->whereNull('deleted_at')
+        $sentJustNow = DB::table('app_user_resets')
+            ->where('app_user_id', $user->getKey())
+            ->where('created_at', '>', now()->subSeconds(self::RESEND_AFTER_SECONDS))
             ->exists();
 
-        abort_unless($exists, 404, 'That app is not available.');
+        // Quietly, like every other answer here: someone pressing "send it
+        // again" twice gets the code already on its way.
+        if ($sentJustNow
+            || ! RateLimiter::attempt("app-reset:{$user->getKey()}", self::CODES_PER_HOUR, fn () => true, 3600)) {
+            return;
+        }
+
+        $code = str_pad((string) random_int(0, 999_999), 6, '0', STR_PAD_LEFT);
+
+        DB::table('app_user_resets')->upsert([[
+            'app_user_id' => $user->getKey(),
+            'code_hash' => self::codeHash($code),
+            'attempts' => 0,
+            'expires_at' => now()->addMinutes(self::CODE_MINUTES),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]], ['app_user_id'], ['code_hash', 'attempts', 'expires_at', 'created_at', 'updated_at']);
+
+        $appName = (string) DB::table('apps')->where('id', $user->app_id)->value('name');
+
+        Mail::to($user->email)->queue(new AppPasswordCode($appName, $code, self::CODE_MINUTES));
+    }
+
+    private static function codeHash(string $code): string
+    {
+        return hash_hmac('sha256', $code, (string) config('app.key'));
+    }
+
+    private function appOrFail(string $app): void
+    {
+        abort_unless(PublicApp::exists($app), 404, 'That app is not available.');
     }
 
     private function lowercaseEmail(Request $request): void

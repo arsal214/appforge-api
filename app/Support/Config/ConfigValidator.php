@@ -72,6 +72,10 @@ class ConfigValidator
             $this->validateMaintenance($config['maintenance'], 'maintenance');
         }
 
+        if (array_key_exists('money', $config) && $config['money'] !== null) {
+            $this->validateMoney($config['money'], 'money');
+        }
+
         $screenIds = $this->validateScreens($config['screens'] ?? null);
         $this->validateTabs($config['tabs'] ?? null, $screenIds);
 
@@ -161,6 +165,33 @@ class ConfigValidator
         $this->requireBool($maintenance['enabled'] ?? null, "{$path}.enabled");
         $this->optionalText($maintenance, 'title', $path, Contract::limit('maxShortText'));
         $this->optionalText($maintenance, 'message', $path, Contract::limit('maxText'));
+    }
+
+    /** How the app writes prices and what tax its basket adds. */
+    private function validateMoney(mixed $money, string $path): void
+    {
+        if (! $this->isMap($money)) {
+            $this->add($path, 'Expected an object.');
+
+            return;
+        }
+
+        $this->allowOnly($money, $path, Contract::fields('money'));
+        $this->optionalText($money, 'currencySymbol', $path, Contract::limit('maxCurrencySymbol'));
+        $this->optionalText($money, 'taxLabel', $path, Contract::limit('maxLabel'));
+
+        if (array_key_exists('taxIncluded', $money) && $money['taxIncluded'] !== null) {
+            $this->requireBool($money['taxIncluded'], "{$path}.taxIncluded");
+        }
+
+        if (array_key_exists('taxRate', $money) && $money['taxRate'] !== null) {
+            $rate = $money['taxRate'];
+
+            // A real number, not a numeric string: the basket multiplies by it.
+            if ((! is_int($rate) && ! is_float($rate)) || $rate < 0 || $rate > Contract::limit('maxTaxRate')) {
+                $this->add("{$path}.taxRate", 'Expected a percentage between 0 and '.Contract::limit('maxTaxRate').'.');
+            }
+        }
     }
 
     /** The bar across the top of the app. */
@@ -930,6 +961,12 @@ class ConfigValidator
             if (array_key_exists('required', $field) && $field['required'] !== null) {
                 $this->requireBool($field['required'], "{$fieldPath}.required");
             }
+
+            if (array_key_exists('onlyFor', $field)
+                && ! in_array($field['onlyFor'], Contract::vocabulary('handovers'), true)
+            ) {
+                $this->add("{$fieldPath}.onlyFor", 'Expected delivery or pickup.');
+            }
         }
     }
 
@@ -1200,6 +1237,10 @@ class ConfigValidator
         if (array_key_exists('addOnTap', $p) && $p['addOnTap'] !== null) {
             $this->requireBool($p['addOnTap'], "{$path}.addOnTap");
         }
+
+        if (array_key_exists('searchable', $p) && $p['searchable'] !== null) {
+            $this->requireBool($p['searchable'], "{$path}.searchable");
+        }
     }
 
     /** @param array<string, mixed> $p */
@@ -1210,6 +1251,40 @@ class ConfigValidator
         $this->optionalText($p, 'emptyText', $path, Contract::limit('maxShortText'));
         $this->optionalText($p, 'ctaLabel', $path, 40);
         $this->optionalAction($p, 'ctaAction', $path);
+
+        if (array_key_exists('signInToOrder', $p) && $p['signInToOrder'] !== null) {
+            $this->requireBool($p['signInToOrder'], "{$path}.signInToOrder");
+        }
+
+        if (array_key_exists('handovers', $p)) {
+            $this->validateHandovers($p['handovers'], "{$path}.handovers");
+        }
+    }
+
+    /**
+     * Delivery, pickup, or both, each once. An empty list would be a basket
+     * that offers no way to get the food, which no shop means to publish.
+     */
+    private function validateHandovers(mixed $handovers, string $path): void
+    {
+        $known = Contract::vocabulary('handovers');
+
+        if (! is_array($handovers) || ! array_is_list($handovers)
+            || $handovers === [] || count($handovers) > count($known)) {
+            $this->add($path, 'Expected delivery, pickup, or both.');
+
+            return;
+        }
+
+        foreach ($handovers as $index => $handover) {
+            if (! in_array($handover, $known, true)) {
+                $this->add("{$path}.{$index}", 'Expected delivery or pickup.');
+            }
+        }
+
+        if (count(array_unique($handovers, SORT_REGULAR)) !== count($handovers)) {
+            $this->add($path, 'Each way is offered once.');
+        }
     }
 
     /** @param array<string, mixed> $p */
@@ -1523,6 +1598,7 @@ class ConfigValidator
                 $this->optionalText($item, 'price', $itemPath, 32);
                 $this->optionalUrl($item, 'imageUrl', $itemPath);
                 $this->optionalAction($item, 'action', $itemPath);
+                $this->optionalItemOptions($item, $itemPath);
             }
 
             return;
@@ -1551,6 +1627,89 @@ class ConfigValidator
         }
 
         $this->add("{$path}.kind", "Expected 'literal' or 'ref'.");
+    }
+
+    /** @param array<string, mixed> $item */
+    private function optionalItemOptions(array $item, string $itemPath): void
+    {
+        if (! array_key_exists('options', $item) || $item['options'] === null) {
+            return;
+        }
+
+        $options = $item['options'];
+        $path = "{$itemPath}.options";
+
+        if (! is_array($options) || ! array_is_list($options)) {
+            $this->add($path, 'Expected a list.');
+
+            return;
+        }
+        if (count($options) > Contract::limit('maxItemOptions')) {
+            $this->add($path, 'Too many options on one item.');
+
+            return;
+        }
+
+        // The phone keys a pick as option id plus choice id. Two that share
+        // one are both picked by a single tap, and both are charged.
+        $optionIds = [];
+
+        foreach ($options as $index => $option) {
+            $optionPath = "{$path}.{$index}";
+            if (! $this->isMap($option)) {
+                $this->add($optionPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($option, $optionPath, Contract::fields('itemOption'));
+            $optionId = $this->requireId($option['id'] ?? null, "{$optionPath}.id");
+            if ($optionId !== null && in_array($optionId, $optionIds, true)) {
+                $this->add("{$optionPath}.id", 'Two options share this id.');
+            }
+            $optionIds[] = $optionId;
+            $this->requireText($option['title'] ?? null, "{$optionPath}.title", Contract::limit('maxLabel'));
+
+            if (! in_array($option['pick'] ?? null, Contract::vocabulary('optionPicks'), true)) {
+                $this->add("{$optionPath}.pick", 'Expected one of: '.implode(', ', Contract::vocabulary('optionPicks')).'.');
+            }
+
+            $choices = $option['choices'] ?? null;
+            $choicesPath = "{$optionPath}.choices";
+
+            // Empty is refused, not skipped: a `one` option with nothing to
+            // pick is a product nobody can add to an order.
+            if (! is_array($choices) || ! array_is_list($choices) || $choices === []) {
+                $this->add($choicesPath, 'Give this option at least one choice.');
+
+                continue;
+            }
+            if (count($choices) > Contract::limit('maxOptionChoices')) {
+                $this->add($choicesPath, 'Too many choices in one option.');
+
+                continue;
+            }
+
+            $choiceIds = [];
+
+            foreach ($choices as $at => $choice) {
+                $choicePath = "{$choicesPath}.{$at}";
+                if (! $this->isMap($choice)) {
+                    $this->add($choicePath, 'Expected an object.');
+
+                    continue;
+                }
+
+                $this->allowOnly($choice, $choicePath, Contract::fields('itemChoice'));
+                $choiceId = $this->requireId($choice['id'] ?? null, "{$choicePath}.id");
+                if ($choiceId !== null && in_array($choiceId, $choiceIds, true)) {
+                    $this->add("{$choicePath}.id", 'Two choices share this id.');
+                }
+                $choiceIds[] = $choiceId;
+                $this->requireText($choice['label'] ?? null, "{$choicePath}.label", Contract::limit('maxLabel'));
+                $this->optionalText($choice, 'price', $choicePath, 32);
+            }
+        }
     }
 
     private function validateAction(mixed $action, string $path): void

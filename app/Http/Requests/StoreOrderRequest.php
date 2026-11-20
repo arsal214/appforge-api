@@ -27,6 +27,8 @@ class StoreOrderRequest extends FormRequest
             'lines.*.quantity' => ['required', 'integer', 'min:1', 'max:'.self::MAX_QUANTITY],
 
             'total' => ['nullable', 'string', 'max:40'],
+            'tax' => ['nullable', 'string', 'max:80'],
+            'handover' => ['nullable', Rule::in(Contract::vocabulary('handovers'))],
 
             'details' => ['present', 'array', 'max:'.Contract::limit('maxDetailFields')],
             'details.*.label' => ['required', 'string', 'max:'.Contract::limit('maxLabel')],

@@ -4,10 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Support\Analytics\EventRecorder;
+use App\Support\PublicApp;
 use AppForge\Schema\Contract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class EventController extends Controller
@@ -22,10 +22,7 @@ class EventController extends Controller
             'events.*.count' => ['nullable', 'integer', 'min:1', 'max:'.EventRecorder::MAX_COUNT],
         ]);
 
-        $exists = DB::table('apps')
-            ->where('id', $app)
-            ->whereNull('deleted_at')
-            ->exists();
+        $exists = PublicApp::exists($app);
 
         if ($exists) {
             (new EventRecorder)->record(

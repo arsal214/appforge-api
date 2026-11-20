@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreOrderRequest;
 use App\Http\Resources\OrderResource;
 use App\Mail\OrderArrived;
+use App\Mail\OrderStatusChanged;
 use App\Models\App as ClientApp;
 use App\Models\Order;
 use App\Models\User;
 use App\Support\Accounts\AppSession;
 use App\Support\Activity;
+use App\Support\PublicApp;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,10 +29,7 @@ class OrderController extends Controller
     {
         // Unauthenticated, so the app cannot be resolved through the
         // organisation scope the way every panel route does it.
-        $exists = DB::table('apps')
-            ->where('id', $app)
-            ->whereNull('deleted_at')
-            ->exists();
+        $exists = PublicApp::exists($app);
 
         abort_unless($exists, 404, 'That app is not available.');
 
@@ -107,6 +106,32 @@ class OrderController extends Controller
         }
     }
 
+    /**
+     * Only someone who was signed in when they ordered has an address to
+     * write to; a guest hears nothing until the app can push. Never fails
+     * the owner's click: the status is saved whether or not this goes.
+     */
+    private function tellTheCustomer(string $appName, Order $order): void
+    {
+        try {
+            $customer = $order->appUser;
+
+            if ($order->is_test || $customer === null
+                || ! OrderStatusChanged::tells($order->kind, $order->status)) {
+                return;
+            }
+
+            Mail::to($customer->email)->queue(
+                new OrderStatusChanged($appName, $order, $order->status),
+            );
+        } catch (\Throwable $e) {
+            Log::error('Could not queue the status email', [
+                'order' => $order->getKey(),
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function record(string $appId, StoreOrderRequest $request, bool $test): Order
     {
         $key = $request->validated('idempotencyKey');
@@ -136,6 +161,8 @@ class OrderController extends Controller
                     'lines' => $request->validated('lines'),
                     'details' => $request->validated('details'),
                     'total' => $request->validated('total'),
+                    'tax' => $request->validated('tax'),
+                    'handover' => $request->validated('handover'),
                     'platform' => $request->validated('platform'),
                     'idempotency_key' => $key,
                 ]);
@@ -213,13 +240,18 @@ class OrderController extends Controller
 
     public function update(Request $request, string $app, string $order): OrderResource
     {
-        $record = $this->findOwned($request, $app)->orders()->findOrFail($order);
+        $owned = $this->findOwned($request, $app);
+        $record = $owned->orders()->findOrFail($order);
 
         $validated = $request->validate([
             'status' => ['required', Rule::in(Order::statusesFor($record->kind))],
         ]);
 
         $record->update(['status' => $validated['status']]);
+
+        if ($record->wasChanged('status')) {
+            $this->tellTheCustomer($owned->name, $record);
+        }
 
         Activity::record(
             $request->user(),

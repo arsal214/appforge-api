@@ -236,6 +236,40 @@ class OrderNotificationTest extends TestCase
     }
 
     #[Test]
+    public function the_email_says_how_the_order_reaches_the_customer(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner']);
+        $app = ClientApp::factory()->create(['organization_id' => $owner->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order(['handover' => 'delivery']))
+            ->assertCreated();
+
+        $order = Order::where('app_id', $app->id)->firstOrFail();
+        $body = (new OrderArrived($app->id, $app->name, $order))->render();
+
+        $this->assertStringContainsString('For delivery', $body);
+    }
+
+    #[Test]
+    public function what_a_customer_types_reaches_the_owner_as_text_never_as_a_link(): void
+    {
+        $owner = User::factory()->create(['role' => 'owner']);
+        $app = ClientApp::factory()->create(['organization_id' => $owner->organization_id]);
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order([
+            'details' => [['label' => 'Note', 'value' => '[Confirm payment](https://evil.example)']],
+            'tax' => 'VAT (20%) £2.00',
+        ]))->assertCreated();
+
+        $order = Order::where('app_id', $app->id)->firstOrFail();
+        $body = (new OrderArrived($app->id, $app->name, $order))->render();
+
+        $this->assertStringNotContainsString('href="https://evil.example"', $body);
+        $this->assertStringContainsString('Confirm payment', $body);
+        $this->assertStringContainsString('VAT (20%) £2', $body);
+    }
+
+    #[Test]
     public function the_app_payload_carries_how_many_orders_are_waiting(): void
     {
         $owner = User::factory()->create(['role' => 'owner']);

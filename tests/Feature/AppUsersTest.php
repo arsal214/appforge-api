@@ -11,6 +11,57 @@ use Tests\TestCase;
 
 class AppUsersTest extends TestCase
 {
+    #[Test]
+    public function the_app_id_and_the_email_have_to_be_spelled_exactly(): void
+    {
+        $app = App::factory()->create();
+
+        $this->postJson("/api/public/apps/{$app->id}/users", [
+            'name' => 'Ali',
+            'email' => 'ali@example.com',
+            'password' => 'a-long-enough-password',
+        ])->assertCreated();
+
+        // Each spelling the collation calls equal would be a rate-limit
+        // bucket of its own, so each has to be a stranger instead.
+        foreach ([strtoupper($app->id), $app->id.' '] as $spelling) {
+            $this->postJson('/api/public/apps/'.rawurlencode($spelling).'/sessions', [
+                'email' => 'ali@example.com',
+                'password' => 'a-long-enough-password',
+            ])->assertNotFound();
+        }
+
+        $this->postJson("/api/public/apps/{$app->id}/sessions", [
+            'email' => "\u{e0}li@example.com",
+            'password' => 'a-long-enough-password',
+        ])->assertStatus(422)->assertJsonValidationErrors('email');
+
+        $this->postJson("/api/public/apps/{$app->id}/sessions", [
+            'email' => 'ali@example.com',
+            'password' => 'a-long-enough-password',
+        ])->assertOk();
+    }
+
+    #[Test]
+    public function a_binned_app_no_longer_answers_its_customers(): void
+    {
+        $app = App::factory()->create();
+
+        $token = $this->postJson("/api/public/apps/{$app->id}/users", [
+            'name' => 'Ali',
+            'email' => 'ali@example.com',
+            'password' => 'a-long-enough-password',
+        ])->assertCreated()->json('data.token');
+
+        $app->delete();
+
+        foreach (['me', 'me/orders'] as $path) {
+            $this->withHeader('Authorization', "Bearer {$token}")
+                ->getJson("/api/public/apps/{$app->id}/{$path}")
+                ->assertNotFound();
+        }
+    }
+
     use RefreshDatabase;
 
     private const SAM = [
@@ -295,5 +346,26 @@ class AppUsersTest extends TestCase
     public function an_account_cannot_be_made_in_an_app_that_does_not_exist(): void
     {
         $this->postJson('/api/public/apps/app_missing/users', self::SAM)->assertNotFound();
+    }
+
+    #[Test]
+    public function guessing_one_persons_password_is_slowed_whatever_else_is_going_on(): void
+    {
+        $app = App::factory()->create();
+
+        $guess = fn (string $email) => $this->postJson("/api/public/apps/{$app->id}/sessions", [
+            'email' => $email,
+            'password' => 'not-the-password',
+        ]);
+
+        // Room for an honest minute of being locked out: ten tries.
+        foreach (range(1, 10) as $try) {
+            $guess('ali@example.com')->assertStatus(422);
+        }
+
+        $guess('ali@example.com')->assertStatus(429);
+
+        // Someone else signing in to the same shop is not caught up in it.
+        $guess('sara@example.com')->assertStatus(422);
     }
 }

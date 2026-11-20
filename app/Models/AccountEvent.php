@@ -24,7 +24,7 @@ class AccountEvent extends Model
         'app.binned' => 'moved {subject} to the bin',
         'app.restored' => 'restored {subject} from the bin',
         'app.deleted' => 'deleted {subject} for good',
-        'version.published' => 'published {subject}',
+        'version.published' => 'built {subject}',
         'version.restored' => 'rolled {subject} back to an earlier version',
         'catalogue.imported' => 'imported the products for {subject}',
         'credential.saved' => 'connected {subject}',

@@ -24,6 +24,8 @@ class OrderResource extends JsonResource
             'lines' => $this->lines,
             'details' => $this->details,
             'total' => $this->total,
+            'tax' => $this->tax,
+            'handover' => $this->handover,
             'platform' => $this->platform,
             'customer' => $this->appUser === null ? null : [
                 'name' => $this->appUser->name,
