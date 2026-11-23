@@ -28,7 +28,7 @@ class AppsTest extends TestCase
         $this->assertEqualsCanonicalizing([
             'id', 'organizationId', 'name', 'slug', 'sourceUrl', 'templateId',
             'industry', 'category', 'businessProfileId', 'status', 'accentColor',
-            'publishedVersion',
+            'publishedVersion', 'builtVersion', 'logoUrl',
             'newOrders', 'newTests', 'createdAt', 'updatedAt',
         ], array_keys($data));
 
@@ -102,6 +102,7 @@ class AppsTest extends TestCase
         $this->assertSame('draft', $data['status']);
         $this->assertSame('sams-pizza', $data['slug']);
         $this->assertNull($data['publishedVersion']);
+        $this->assertNull($data['builtVersion']);
         $this->assertSame($user->organization_id, $data['organizationId']);
     }
 
@@ -482,5 +483,41 @@ class AppsTest extends TestCase
             'name' => 'New Name',
             'email' => $user->email,
         ])->assertOk();
+    }
+
+    #[Test]
+    public function an_app_carries_the_logo_of_the_business_it_is_linked_to(): void
+    {
+        $user = User::factory()->create();
+
+        $profile = BusinessProfile::create([
+            'organization_id' => $user->organization_id,
+            'category' => 'restaurant',
+            'name' => 'Sams Pizza',
+            'data' => ['businessName' => 'Sams Pizza', 'logoUrl' => '/storage/profile-images/logo.png'],
+        ]);
+
+        $linked = App::factory()->create([
+            'organization_id' => $user->organization_id,
+            'business_profile_id' => $profile->id,
+        ]);
+        $alone = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        // Stored as a path, delivered as an address a browser can load.
+        $logo = $this->actingAs($user)
+            ->getJson("/api/apps/{$linked->id}")
+            ->assertOk()
+            ->json('data.logoUrl');
+
+        $this->assertStringStartsWith('http', $logo);
+        $this->assertStringEndsWith('/profile-images/logo.png', $logo);
+
+        $this->actingAs($user)
+            ->getJson("/api/apps/{$alone->id}")
+            ->assertOk()
+            ->assertJsonPath('data.logoUrl', null);
+
+        $listed = collect($this->actingAs($user)->getJson('/api/apps')->assertOk()->json('data'));
+        $this->assertSame($logo, $listed->firstWhere('id', $linked->id)['logoUrl']);
     }
 }

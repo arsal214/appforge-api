@@ -147,7 +147,7 @@ class AppController extends Controller
             'orders as new_tests_count' => fn ($query) => $query
                 ->where('status', 'new')
                 ->where('is_test', true),
-        ]);
+        ])->withMax('versions', 'version')->with('businessProfile');
     }
 
     private function findOwned(Request $request, string $id): ClientApp
