@@ -58,6 +58,12 @@ class App extends Model
         return $this->belongsTo(Organization::class);
     }
 
+    /** The saved business details this app was filled from, if any. */
+    public function businessProfile(): BelongsTo
+    {
+        return $this->belongsTo(BusinessProfile::class);
+    }
+
     public function config(): HasOne
     {
         return $this->hasOne(AppConfig::class);

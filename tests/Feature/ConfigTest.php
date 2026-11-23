@@ -316,7 +316,21 @@ class ConfigTest extends TestCase
             ->assertJsonPath('data.version', 2);
 
         $this->assertSame('ready', $app->fresh()->status);
+
+        // Built is not on the stores: the app says which version is newest,
+        // and still says no store has one.
         $this->assertNull($app->fresh()->published_version);
+
+        $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}")
+            ->assertOk()
+            ->assertJsonPath('data.builtVersion', 2)
+            ->assertJsonPath('data.publishedVersion', null);
+
+        $this->actingAs($user)
+            ->getJson('/api/apps')
+            ->assertOk()
+            ->assertJsonPath('data.0.builtVersion', 2);
     }
 
     #[Test]

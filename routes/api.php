@@ -133,6 +133,11 @@ Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
 
     Route::patch('account', [AccountController::class, 'update']);
 
+    // Slow on purpose: with a borrowed session this is a place to guess the
+    // current password, six tries a minute at most.
+    Route::put('account/password', [AccountController::class, 'password'])
+        ->middleware('throttle:6,1');
+
     Route::middleware('allow:team')->group(function () {
         Route::get('team', [TeamController::class, 'index']);
         Route::post('team/invites', [TeamController::class, 'store']);

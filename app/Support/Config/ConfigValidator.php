@@ -1592,6 +1592,10 @@ class ConfigValidator
                 }
                 $this->allowOnly($item, $itemPath, Contract::fields('item'));
                 $this->requireId($item['id'] ?? null, "{$itemPath}.id");
+
+                if (array_key_exists('categoryId', $item)) {
+                    $this->requireId($item['categoryId'], "{$itemPath}.categoryId");
+                }
                 $this->requireText($item['title'] ?? null, "{$itemPath}.title", Contract::limit('maxShortText'));
                 $this->optionalText($item, 'subtitle', $itemPath, Contract::limit('maxShortText'));
                 // Pre-formatted including currency: the shell does no money maths.
