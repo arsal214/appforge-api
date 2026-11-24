@@ -11,6 +11,7 @@ use App\Support\MediaUrl;
 use AppForge\Schema\Contract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -25,6 +26,10 @@ class UploadController extends Controller
         'image/png' => 'png',
         'image/webp' => 'webp',
     ];
+
+    // MP4 alone: the one container an iPhone and an Android phone both play
+    // without a second copy in another format.
+    private const VIDEO = 'video/mp4';
 
     public function index(Request $request): JsonResponse
     {
@@ -50,6 +55,12 @@ class UploadController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $sent = $request->file('file');
+
+        if ($sent instanceof UploadedFile && $sent->isValid() && $sent->getMimeType() === self::VIDEO) {
+            return $this->storeVideo($request, $sent);
+        }
+
         $maxKilobytes = (int) (Contract::limit('maxUploadBytes') / 1024);
         $edge = Contract::limit('maxImageEdge');
 
@@ -66,10 +77,11 @@ class UploadController extends Controller
             ],
             [
                 'file.required' => 'Choose an image to upload.',
-                'file.image' => 'That file is not an image.',
+                'file.image' => 'Use a JPG, PNG or WebP image, or an MP4 video.',
                 'file.mimetypes' => 'Use a JPG, PNG or WebP image.',
                 'file.dimensions' => "Keep the image under {$edge} pixels on each side.",
                 'file.max' => 'That image is too large. Keep it under 5 MB.',
+                'file.uploaded' => self::serverLimit(),
             ],
         );
 
@@ -116,6 +128,62 @@ class UploadController extends Controller
         ], 201);
     }
 
+    private function storeVideo(Request $request, UploadedFile $file): JsonResponse
+    {
+        $megabytes = (int) (Contract::limit('maxVideoBytes') / (1024 * 1024));
+
+        $request->validate(
+            ['file' => ['required', 'file', 'max:'.($megabytes * 1024), 'mimetypes:'.self::VIDEO]],
+            ['file.max' => "That video is too large. Keep it under {$megabytes} MB."],
+        );
+
+        $organizationId = $request->user()->organization_id;
+
+        $path = $file->storeAs(
+            "profile-images/{$organizationId}",
+            Str::ulid()->toString().'.mp4',
+            'public',
+        );
+
+        if ($path === false) {
+            abort(500, 'We could not save that video. Try again in a moment.');
+        }
+
+        $upload = Upload::create([
+            'organization_id' => $organizationId,
+            'path' => $path,
+            'name' => Str::limit($file->getClientOriginalName() ?: basename($path), 120, ''),
+            'mime' => self::VIDEO,
+            'bytes' => $file->getSize(),
+        ]);
+
+        Activity::record(
+            $request->user(),
+            'video.added',
+            $upload->name,
+            $upload->getKey(),
+            ['bytes' => $upload->bytes],
+        );
+
+        return response()->json([
+            'data' => [
+                'url' => MediaUrl::absolute($path),
+                'upload' => new UploadResource($upload),
+            ],
+        ], 201);
+    }
+
+    /**
+     * What to say when PHP itself turned the file away before any rule here
+     * saw it. That limit is the server's own setting, so the message names
+     * the number: "the upload failed" sends the owner to try the same file again.
+     */
+    private static function serverLimit(): string
+    {
+        return 'This server takes files up to '.ini_get('upload_max_filesize')
+            .'B. A larger one needs the server\'s upload limit raised.';
+    }
+
     public function destroy(Request $request, Upload $upload): JsonResponse
     {
         $inUse = MediaReferences::using($upload->reference(), $upload->organization_id);
@@ -136,7 +204,12 @@ class UploadController extends Controller
 
         Storage::disk('public')->delete($path);
 
-        Activity::record($request->user(), 'image.removed', $name, $id);
+        Activity::record(
+            $request->user(),
+            $upload->mime === self::VIDEO ? 'video.removed' : 'image.removed',
+            $name,
+            $id,
+        );
 
         return response()->json(['data' => null], 200);
     }

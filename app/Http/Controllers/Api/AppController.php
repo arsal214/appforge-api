@@ -82,6 +82,16 @@ class AppController extends Controller
         if ($request->has('businessProfileId')) {
             $changes['business_profile_id'] = $request->validated('businessProfileId');
         }
+        if ($request->has('iconUrl')) {
+            $changes['icon_path'] = $request->iconUpload()?->reference();
+        }
+        if ($request->has('bundleId')) {
+            $changes['bundle_id'] = $request->validated('bundleId');
+        }
+        if ($request->has('splashColor')) {
+            $color = $request->validated('splashColor');
+            $changes['splash_color'] = $color === null ? null : strtolower($color);
+        }
 
         $renamed = array_key_exists('name', $changes)
             && $changes['name'] !== $model->name;

@@ -371,4 +371,51 @@ class UploadTest extends TestCase
             ]],
         ];
     }
+
+    #[Test]
+    public function an_mp4_is_accepted_and_kept_as_a_video(): void
+    {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)
+            ->postJson('/api/uploads', [
+                'file' => UploadedFile::fake()->create('clip.mp4', 9000, 'video/mp4'),
+            ])
+            ->assertCreated();
+
+        // Nine megabytes: past the image cap, which a video is not held to.
+        $this->assertStringEndsWith('.mp4', $response->json('data.url'));
+        $this->assertDatabaseHas('uploads', ['name' => 'clip.mp4', 'mime' => 'video/mp4']);
+        $this->assertDatabaseHas('account_events', ['action' => 'video.added']);
+    }
+
+    #[Test]
+    public function a_video_a_phone_might_not_play_is_refused(): void
+    {
+        $user = User::factory()->create();
+
+        foreach (['clip.mov' => 'video/quicktime', 'clip.webm' => 'video/webm'] as $name => $mime) {
+            $this->actingAs($user)
+                ->postJson('/api/uploads', ['file' => UploadedFile::fake()->create($name, 500, $mime)])
+                ->assertStatus(422)
+                ->assertJsonValidationErrors('file');
+        }
+
+        $this->assertCount(0, Storage::disk('public')->allFiles());
+    }
+
+    #[Test]
+    public function a_video_past_the_cap_is_refused(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->postJson('/api/uploads', [
+                'file' => UploadedFile::fake()->create('film.mp4', 60 * 1024, 'video/mp4'),
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('file');
+
+        $this->assertCount(0, Storage::disk('public')->allFiles());
+    }
 }

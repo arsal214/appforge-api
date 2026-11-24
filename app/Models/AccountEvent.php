@@ -47,6 +47,8 @@ class AccountEvent extends Model
         'order.tests_cleared' => 'cleared the test records from {subject}',
         'image.added' => 'added the image {subject}',
         'image.removed' => 'deleted the image {subject}',
+        'video.added' => 'added the video {subject}',
+        'video.removed' => 'deleted the video {subject}',
         'business.saved' => 'saved the business {subject}',
         'business.changed' => 'changed the saved business {subject}',
         'business.removed' => 'deleted the saved business {subject}',
@@ -76,6 +78,7 @@ class AccountEvent extends Model
             'business.renamed', 'business.saved', 'business.changed',
             'business.removed',
             'image.added', 'image.removed',
+            'video.added', 'video.removed',
         ],
     ];
 

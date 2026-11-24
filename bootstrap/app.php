@@ -17,6 +17,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias(['allow' => EnsureAbility::class]);
 
         $middleware->redirectGuestsTo(fn () => null);
+
+        // A config is a document, not form input: in styled text the space
+        // between two differently styled words is the edge of a span, and
+        // trimming it runs the words together.
+        $middleware->trimStrings(except: ['config.*']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

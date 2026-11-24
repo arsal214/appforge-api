@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\HasPrefixedUlid;
 use App\Models\Scopes\OrganizationScope;
+use App\Support\BundleId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -17,6 +18,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'organization_id',
     'name',
     'slug',
+    'bundle_id',
     'source_url',
     'template_id',
     'industry',
@@ -24,6 +26,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'business_profile_id',
     'status',
     'accent_color',
+    'icon_path',
+    'splash_color',
 ])]
 #[ScopedBy(OrganizationScope::class)]
 class App extends Model
@@ -40,6 +44,17 @@ class App extends Model
     ];
 
     public const BIN_DAYS = 30;
+
+    /**
+     * Every app is made with a store id of its own, here and not in the
+     * controller, so there is no way to make one that shares the shell's.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (App $app): void {
+            $app->bundle_id ??= BundleId::suggest((string) $app->name);
+        });
+    }
 
     public static function idPrefix(): string
     {
