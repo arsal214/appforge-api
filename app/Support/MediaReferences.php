@@ -34,7 +34,13 @@ final class MediaReferences
             ->distinct()
             ->pluck('app_id');
 
-        $names = $inDrafts->merge($inVersions)
+        // An icon is held on the app itself, not in any config.
+        $asIcon = DB::table('apps')
+            ->whereIn('id', $appIds)
+            ->where('icon_path', $needle)
+            ->pluck('id');
+
+        $names = $inDrafts->merge($inVersions)->merge($asIcon)
             ->unique()
             ->map(fn (string $appId): string => (string) $apps[$appId])
             ->values()

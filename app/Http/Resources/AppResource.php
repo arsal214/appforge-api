@@ -19,6 +19,7 @@ class AppResource extends JsonResource
             'organizationId' => $this->organization_id,
             'name' => $this->name,
             'slug' => $this->slug,
+            'bundleId' => $this->bundle_id,
             'sourceUrl' => $this->source_url,
             'templateId' => $this->template_id,
             'industry' => $this->industry,
@@ -29,6 +30,10 @@ class AppResource extends JsonResource
             'publishedVersion' => $this->published_version,
             'builtVersion' => $this->builtVersion(),
             'logoUrl' => $this->logoUrl(),
+            'splashColor' => $this->splash_color,
+            'iconUrl' => $this->icon_path === null
+                ? null
+                : MediaUrl::forDelivery(['icon' => $this->icon_path])['icon'],
             'newOrders' => $this->whenCounted(
                 'new_orders',
                 fn () => (int) $this->new_orders_count,

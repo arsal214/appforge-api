@@ -596,6 +596,9 @@ class ConfigValidator
             'promo_banner' => $this->promoBannerProps($props, $path),
             'text_block' => $this->textBlockProps($props, $path),
             'image_banner' => $this->imageBannerProps($props, $path),
+            'marquee' => $this->marqueeProps($props, $path),
+            'video' => $this->videoProps($props, $path),
+            'rich_text' => $this->richTextProps($props, $path),
             'button_row' => $this->buttonRowProps($props, $path),
             'opening_hours' => $this->openingHoursProps($props, $path),
             'loyalty_card' => $this->loyaltyCardProps($props, $path),
@@ -671,6 +674,7 @@ class ConfigValidator
         $this->requireBool($p['showPrices'] ?? null, "{$path}.showPrices");
         $this->validateItemSource($p['source'] ?? null, "{$path}.source");
         $this->optionalTapProps($p, $path);
+        $this->optionalSale($p, $path);
     }
 
     /** @param array<string, mixed> $p */
@@ -681,6 +685,53 @@ class ConfigValidator
         $this->requireBool($p['showImages'] ?? null, "{$path}.showImages");
         $this->validateItemSource($p['source'] ?? null, "{$path}.source");
         $this->optionalTapProps($p, $path);
+        $this->optionalSale($p, $path);
+    }
+
+    /**
+     * A sale on one product or on a whole menu: a percentage off, optionally
+     * until a moment. The phone prices against both, so both are held to
+     * what it can do arithmetic with.
+     *
+     * @param  array<string, mixed>  $owner
+     */
+    private function optionalSale(array $owner, string $ownerPath): void
+    {
+        if (! array_key_exists('sale', $owner) || $owner['sale'] === null) {
+            return;
+        }
+
+        $sale = $owner['sale'];
+        $path = "{$ownerPath}.sale";
+
+        if (! $this->isMap($sale)) {
+            $this->add($path, 'Expected an object.');
+
+            return;
+        }
+
+        $this->allowOnly($sale, $path, Contract::fields('sale'));
+
+        $min = Contract::limit('minDiscountPercent');
+        $max = Contract::limit('maxDiscountPercent');
+        $percent = $sale['discountPercent'] ?? null;
+
+        if (! is_int($percent) || $percent < $min || $percent > $max) {
+            $this->add("{$path}.discountPercent", "Expected a whole percentage between {$min} and {$max}.");
+        }
+
+        if (array_key_exists('endsAt', $sale) && $sale['endsAt'] !== null) {
+            $endsAt = $sale['endsAt'];
+
+            if (! is_string($endsAt)
+                || ! preg_match(Contract::pattern('dateTime'), $endsAt)
+                || strtotime($endsAt) === false
+            ) {
+                $this->add("{$path}.endsAt", 'Expected a date and time with a timezone, like 2026-12-01T18:00:00Z.');
+            }
+        }
+
+        $this->optionalText($sale, 'label', $path, Contract::limit('maxLabel'));
     }
 
     /** @param array<string, mixed> $p */
@@ -716,6 +767,171 @@ class ConfigValidator
         $this->requireRatio($p['aspectRatio'] ?? null, "{$path}.aspectRatio");
 
         $this->optionalAction($p, 'action', $path);
+    }
+
+    /**
+     * A line of words that travels. Words only: how it looks is the block's
+     * style, which is validated with every other block's.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function marqueeProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.marquee'));
+        $this->requireText($p['text'] ?? null, "{$path}.text", Contract::limit('maxShortText'));
+
+        if (array_key_exists('speed', $p)) {
+            $speed = $p['speed'];
+            $min = Contract::limit('minMarqueeSpeed');
+            $max = Contract::limit('maxMarqueeSpeed');
+
+            // A number, strictly: "60" from a form would reach the phone as
+            // text, and a duration worked out from text is not a duration.
+            if ((! is_int($speed) && ! is_float($speed)) || $speed < $min || $speed > $max) {
+                $this->add("{$path}.speed", "Expected a speed between {$min} and {$max}.");
+            }
+        }
+
+        if (array_key_exists('direction', $p)
+            && ! in_array($p['direction'], Contract::vocabulary('marqueeDirections'), true)
+        ) {
+            $this->add("{$path}.direction", 'Expected left or right.');
+        }
+
+        $this->optionalAction($p, 'action', $path);
+    }
+
+    /**
+     * One clip and how it sits. The addresses are held to the same rule as
+     * an image's: they end up in a player on the phone.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function videoProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.video'));
+        $this->optionalUrl($p, 'videoUrl', $path);
+        $this->optionalUrl($p, 'posterUrl', $path);
+        $this->optionalText($p, 'caption', $path, Contract::limit('maxShortText'));
+        $this->requireRatio($p['aspectRatio'] ?? null, "{$path}.aspectRatio");
+
+        if (array_key_exists('autoplay', $p) && $p['autoplay'] !== null) {
+            $this->requireBool($p['autoplay'], "{$path}.autoplay");
+        }
+    }
+
+    /**
+     * Styled words, as data. Every key of every block and span is on an
+     * allowlist and every value is held to a type the phone draws with its
+     * own text, which is what keeps this from being a second way to send
+     * markup to a phone.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function richTextProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.rich_text'));
+
+        $blocks = $p['blocks'] ?? null;
+
+        if (! is_array($blocks) || ! array_is_list($blocks)) {
+            $this->add("{$path}.blocks", 'Expected a list of lines.');
+
+            return;
+        }
+        if (count($blocks) > Contract::limit('maxRichBlocks')) {
+            $this->add("{$path}.blocks", 'Too much text for one block. Split it into two.');
+
+            return;
+        }
+
+        foreach ($blocks as $index => $block) {
+            $blockPath = "{$path}.blocks.{$index}";
+
+            if (! $this->isMap($block)) {
+                $this->add($blockPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($block, $blockPath, Contract::fields('richBlock'));
+
+            if (! in_array($block['kind'] ?? null, Contract::vocabulary('richBlockKinds'), true)) {
+                $this->add("{$blockPath}.kind", 'Expected a kind of line this app can draw.');
+            }
+
+            if (array_key_exists('align', $block)
+                && ! in_array($block['align'], Contract::vocabulary('textAligns'), true)
+            ) {
+                $this->add("{$blockPath}.align", 'Expected left, center or right.');
+            }
+
+            $this->richSpans($block['spans'] ?? null, "{$blockPath}.spans");
+        }
+    }
+
+    private function richSpans(mixed $spans, string $path): void
+    {
+        if (! is_array($spans) || ! array_is_list($spans)) {
+            $this->add($path, 'Expected a list.');
+
+            return;
+        }
+        if (count($spans) > Contract::limit('maxRichSpans')) {
+            $this->add($path, 'Too many differently styled pieces in one line.');
+
+            return;
+        }
+
+        foreach ($spans as $index => $span) {
+            $spanPath = "{$path}.{$index}";
+
+            if (! $this->isMap($span)) {
+                $this->add($spanPath, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($span, $spanPath, Contract::fields('richSpan'));
+            // Not requireText: a lone space between a bold word and an italic
+            // one is a span of its own, and a real one.
+            $text = $span['text'] ?? null;
+            if (! is_string($text) || $text === '') {
+                $this->add("{$spanPath}.text", 'This is required.');
+            } elseif (mb_strlen($text) > Contract::limit('maxText')) {
+                $this->add("{$spanPath}.text", 'Keep this under '.Contract::limit('maxText').' characters.');
+            }
+
+            foreach (['bold', 'italic', 'underline', 'strike'] as $mark) {
+                if (array_key_exists($mark, $span)) {
+                    $this->requireBool($span[$mark], "{$spanPath}.{$mark}");
+                }
+            }
+
+            $this->optionalColor($span, 'color', $spanPath);
+            $this->optionalColor($span, 'highlight', $spanPath);
+            $this->optionalWholeNumber(
+                $span, 'size', $spanPath,
+                Contract::limit('minFontSize'), Contract::limit('maxFontSize'),
+            );
+
+            if (array_key_exists('font', $span)
+                && ! in_array($span['font'], Contract::vocabulary('fontFamilies'), true)
+            ) {
+                $this->add("{$spanPath}.font", 'Expected default, serif or mono.');
+            }
+
+            // Held to http and https here, not the looser rule an image gets:
+            // this address is opened, not drawn.
+            if (array_key_exists('link', $span)
+                && (! is_string($span['link'])
+                    || mb_strlen($span['link']) > Contract::limit('maxUrl')
+                    || ! preg_match('#^https?://#i', $span['link'])
+                    || filter_var($span['link'], FILTER_VALIDATE_URL) === false)
+            ) {
+                $this->add("{$spanPath}.link", 'Expected a web address starting with http:// or https://.');
+            }
+        }
     }
 
     /** @param array<string, mixed> $p */
@@ -1603,6 +1819,7 @@ class ConfigValidator
                 $this->optionalUrl($item, 'imageUrl', $itemPath);
                 $this->optionalAction($item, 'action', $itemPath);
                 $this->optionalItemOptions($item, $itemPath);
+                $this->optionalSale($item, $itemPath);
             }
 
             return;

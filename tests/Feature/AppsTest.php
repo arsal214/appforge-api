@@ -26,9 +26,9 @@ class AppsTest extends TestCase
             ->json('data');
 
         $this->assertEqualsCanonicalizing([
-            'id', 'organizationId', 'name', 'slug', 'sourceUrl', 'templateId',
+            'id', 'organizationId', 'name', 'slug', 'bundleId', 'sourceUrl', 'templateId',
             'industry', 'category', 'businessProfileId', 'status', 'accentColor',
-            'publishedVersion', 'builtVersion', 'logoUrl',
+            'publishedVersion', 'builtVersion', 'logoUrl', 'iconUrl', 'splashColor',
             'newOrders', 'newTests', 'createdAt', 'updatedAt',
         ], array_keys($data));
 

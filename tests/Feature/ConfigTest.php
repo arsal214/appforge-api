@@ -264,6 +264,38 @@ class ConfigTest extends TestCase
     }
 
     #[Test]
+    public function the_spaces_between_styled_words_survive_a_save(): void
+    {
+        $user = User::factory()->create();
+        $app = $this->ownApp($user);
+        $spans = [
+            ['text' => 'Fresh', 'bold' => true],
+            ['text' => ' '],
+            ['text' => 'bread', 'italic' => true],
+            ['text' => ' from our '],
+            ['text' => 'oven', 'link' => 'https://example.com/menu'],
+            ['text' => ' today '],
+        ];
+        $config = $this->config();
+        $config['screens'][0]['sections'][] = [
+            'id' => 'sec_text',
+            'type' => 'rich_text',
+            'props' => ['blocks' => [['kind' => 'paragraph', 'spans' => $spans]]],
+        ];
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$app->id}/config", ['config' => $config])
+            ->assertOk();
+
+        $saved = $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/config")
+            ->json('data.config.screens.0.sections.1.props.blocks.0.spans');
+
+        // Equals, not Same: a MySQL JSON column hands keys back in its own order.
+        $this->assertEquals($spans, $saved);
+    }
+
+    #[Test]
     public function saving_an_invalid_draft_is_a_422_keyed_by_path(): void
     {
         $user = User::factory()->create();
