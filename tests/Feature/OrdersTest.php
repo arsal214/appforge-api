@@ -342,6 +342,37 @@ class OrdersTest extends TestCase
     }
 
     #[Test]
+    public function a_delivery_arrives_with_its_address_whole(): void
+    {
+        $user = User::factory()->create();
+        $app = App::factory()->create(['organization_id' => $user->organization_id]);
+
+        // The delivery block's answers on top of a details block's own six:
+        // more than one block's worth, with an address longer than one box.
+        $address = 'Flat 4, Riverside House, '.str_repeat('Long Street Name ', 12).'Leeds LS1 4AB';
+        $details = [
+            ...array_fill(0, 6, ['label' => 'Question', 'value' => 'Answer']),
+            ['label' => 'Name', 'value' => 'Sam Rivers'],
+            ['label' => 'Phone', 'value' => '+44 7700 900123', 'kind' => 'phone'],
+            ['label' => 'Delivery address', 'value' => $address, 'kind' => 'address'],
+            ['label' => 'Delivery instructions', 'value' => 'Ring twice, then wait at the side door.', 'kind' => 'paragraph'],
+        ];
+
+        $this->postJson("/api/public/apps/{$app->id}/orders", $this->order([
+            'handover' => 'delivery',
+            'details' => $details,
+        ]))->assertCreated();
+
+        $this->actingAs($user)
+            ->getJson("/api/apps/{$app->id}/orders")
+            ->assertOk()
+            ->assertJsonPath('data.orders.0.handover', 'delivery')
+            ->assertJsonCount(10, 'data.orders.0.details')
+            ->assertJsonPath('data.orders.0.details.8.kind', 'address')
+            ->assertJsonPath('data.orders.0.details.8.value', $address);
+    }
+
+    #[Test]
     public function a_junk_order_is_refused(): void
     {
         $user = User::factory()->create();
@@ -360,8 +391,12 @@ class OrdersTest extends TestCase
         ]))->assertStatus(422)->assertJsonValidationErrors(['lines.0.title']);
 
         $this->postJson($url, $this->order([
-            'details' => [['label' => 'Note', 'value' => str_repeat('x', 201)]],
+            'details' => [['label' => 'Note', 'value' => str_repeat('x', 4001)]],
         ]))->assertStatus(422)->assertJsonValidationErrors(['details.0.value']);
+
+        $this->postJson($url, $this->order([
+            'details' => array_fill(0, 17, ['label' => 'Note', 'value' => 'ok']),
+        ]))->assertStatus(422)->assertJsonValidationErrors(['details']);
 
         $this->postJson($url, $this->order([
             'details' => [['label' => 'Note', 'value' => 'ok', 'kind' => 'signature']],

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPrefixedUlid;
+use App\Support\MediaUrl;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -14,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * Deliberately not `User` and not on Sanctum: a panel route trusts any Sanctum
  * token, so a token issued here must be one the panel has never heard of.
  */
-#[Fillable(['app_id', 'name', 'email', 'password'])]
+#[Fillable(['app_id', 'name', 'email', 'password', 'phone', 'avatar_path'])]
 #[Hidden(['password'])]
 class AppUser extends Model
 {
@@ -35,13 +36,15 @@ class AppUser extends Model
         return $this->belongsTo(App::class);
     }
 
-    /** @return array{id: string, name: string, email: string} */
+    /** @return array{id: string, name: string, email: string, phone: ?string, photoUrl: ?string} */
     public function profile(): array
     {
         return [
             'id' => $this->id,
             'name' => $this->name,
             'email' => $this->email,
+            'phone' => $this->phone,
+            'photoUrl' => $this->avatar_path === null ? null : MediaUrl::absolute($this->avatar_path),
         ];
     }
 }

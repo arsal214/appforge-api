@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\App;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -367,5 +369,81 @@ class AppUsersTest extends TestCase
 
         // Someone else signing in to the same shop is not caught up in it.
         $guess('sara@example.com')->assertStatus(422);
+    }
+
+    #[Test]
+    public function a_customer_changes_their_own_name_and_phone(): void
+    {
+        $app = $this->app();
+        $token = $this->signUp($app);
+
+        $this->withToken($token)
+            ->patchJson("/api/public/apps/{$app->id}/me", ['name' => '  Sam Rivers ', 'phone' => '+44 7700 900123'])
+            ->assertOk()
+            ->assertJsonPath('data.user.name', 'Sam Rivers')
+            ->assertJsonPath('data.user.phone', '+44 7700 900123')
+            ->assertJsonPath('data.user.photoUrl', null);
+
+        // Cleared, the number goes; an empty name and a word for a phone are refused.
+        $this->withToken($token)
+            ->patchJson("/api/public/apps/{$app->id}/me", ['name' => 'Sam Rivers', 'phone' => ''])
+            ->assertOk()->assertJsonPath('data.user.phone', null);
+
+        $this->withToken($token)
+            ->patchJson("/api/public/apps/{$app->id}/me", ['name' => '', 'phone' => 'call me'])
+            ->assertStatus(422)->assertJsonValidationErrors(['name', 'phone']);
+
+        // The email is what they sign in with, and is not changed here.
+        $this->withToken($token)
+            ->patchJson("/api/public/apps/{$app->id}/me", ['name' => 'Sam', 'email' => 'thief@example.com'])
+            ->assertOk()->assertJsonPath('data.user.email', 'sam@example.com');
+    }
+
+    #[Test]
+    public function a_profile_is_only_ever_changed_by_its_own_signed_in_customer(): void
+    {
+        $app = $this->app();
+        $other = $this->app();
+        $token = $this->signUp($app);
+
+        $this->patchJson("/api/public/apps/{$app->id}/me", ['name' => 'Nobody'])->assertUnauthorized();
+        $this->postJson("/api/public/apps/{$app->id}/me/photo", [])->assertUnauthorized();
+        $this->withToken($token)
+            ->patchJson("/api/public/apps/{$other->id}/me", ['name' => 'Elsewhere'])
+            ->assertUnauthorized();
+    }
+
+    #[Test]
+    public function a_photo_replaces_the_last_and_goes_with_the_account(): void
+    {
+        Storage::fake('public');
+        $app = $this->app();
+        $token = $this->signUp($app);
+        $url = "/api/public/apps/{$app->id}/me/photo";
+        $json = ['Accept' => 'application/json'];
+
+        $first = $this->withToken($token)
+            ->post($url, ['photo' => UploadedFile::fake()->image('me.jpg', 600, 600)], $json)
+            ->assertOk()->json('data.user.photoUrl');
+        $this->assertIsString($first);
+        $this->assertCount(1, Storage::disk('public')->allFiles());
+
+        $this->withToken($token)
+            ->post($url, ['photo' => UploadedFile::fake()->image('me.png', 400, 400)], $json)
+            ->assertOk();
+        $this->assertCount(1, Storage::disk('public')->allFiles(), 'the old photo is deleted');
+
+        $this->withToken($token)
+            ->post($url, ['photo' => UploadedFile::fake()->create('me.pdf', 10, 'application/pdf')], $json)
+            ->assertStatus(422)->assertJsonValidationErrors('photo');
+
+        $this->withToken($token)->deleteJson($url)->assertOk()->assertJsonPath('data.user.photoUrl', null);
+        $this->assertCount(0, Storage::disk('public')->allFiles());
+
+        $this->withToken($token)
+            ->post($url, ['photo' => UploadedFile::fake()->image('me.jpg', 300, 300)], $json)
+            ->assertOk();
+        $this->withToken($token)->deleteJson("/api/public/apps/{$app->id}/me")->assertNoContent();
+        $this->assertCount(0, Storage::disk('public')->allFiles(), 'deleting the account deletes the photo');
     }
 }

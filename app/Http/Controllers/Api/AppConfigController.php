@@ -7,6 +7,7 @@ use App\Http\Resources\Iso8601;
 use App\Models\App as ClientApp;
 use App\Support\Config\ConfigValidator;
 use App\Support\MediaUrl;
+use App\Support\Profile\SharedMoney;
 use AppForge\Schema\Contract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -55,6 +56,8 @@ class AppConfigController extends Controller
             throw ValidationException::withMessages($errors);
         }
 
+        $before = $current?->config;
+
         $record = $model->config()->updateOrCreate(
             ['app_id' => $model->id],
             [
@@ -63,6 +66,8 @@ class AppConfigController extends Controller
                 'updated_by' => $request->user()->getKey(),
             ],
         );
+
+        SharedMoney::fromApp($model, $before, $config);
 
         if ($model->status === 'rejected') {
             $model->update(['status' => 'draft']);

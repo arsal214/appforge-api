@@ -8,6 +8,7 @@ use App\Models\BusinessProfile;
 use App\Support\Activity;
 use App\Support\MediaUrl;
 use App\Support\Profile\BusinessProfileValidator;
+use App\Support\Profile\SharedMoney;
 use AppForge\Schema\Contract;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -74,11 +75,14 @@ class BusinessProfileController extends Controller
             : $profile->name;
 
         $data = $this->cleanData($profile->category, $request->input('data'));
+        $moneyWas = SharedMoney::of($profile->data);
 
         $profile->update([
             'name' => $name,
             'data' => MediaUrl::forStorage($data),
         ]);
+
+        SharedMoney::toApps($profile, SharedMoney::changes($moneyWas, SharedMoney::of($data)));
 
         Activity::record(
             $request->user(),

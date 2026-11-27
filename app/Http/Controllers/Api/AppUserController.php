@@ -9,6 +9,7 @@ use App\Models\AppUser;
 use App\Models\Order;
 use App\Support\Accounts\AppSession;
 use App\Support\PublicApp;
+use AppForge\Schema\Contract;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
@@ -252,6 +256,106 @@ class AppUserController extends Controller
     }
 
     /**
+     * The signed-in person changing their own name or phone number. The email
+     * is not changed here: it is what they sign in with, and changing it
+     * without proving the new one is theirs would hand the account to a typo.
+     */
+    public function update(Request $request, string $app): JsonResponse
+    {
+        $this->appOrFail($app);
+
+        $user = AppSession::user($request, $app);
+
+        abort_if($user === null, 401, 'Sign in again.');
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'phone' => ['nullable', 'string', 'regex:'.Contract::pattern('phone')],
+        ], [
+            'name.required' => 'Your name cannot be empty.',
+            'phone.regex' => 'That does not look like a phone number.',
+        ]);
+
+        $user->update([
+            'name' => trim($validated['name']),
+            'phone' => isset($validated['phone']) && trim($validated['phone']) !== ''
+                ? trim($validated['phone'])
+                : null,
+        ]);
+
+        return response()->json(['data' => ['user' => $user->profile()]]);
+    }
+
+    /**
+     * A new profile photo, replacing the last one. Held to the same rules as
+     * an owner's image upload, because it is served from our domain too, and
+     * kept apart from the shop's own images: it is the customer's, not theirs.
+     */
+    public function storePhoto(Request $request, string $app): JsonResponse
+    {
+        $this->appOrFail($app);
+
+        $user = AppSession::user($request, $app);
+
+        abort_if($user === null, 401, 'Sign in again.');
+
+        $edge = Contract::limit('maxImageEdge');
+
+        $request->validate([
+            'photo' => [
+                'required',
+                'file',
+                'image',
+                'mimetypes:image/jpeg,image/png,image/webp',
+                'max:'.(int) (Contract::limit('maxUploadBytes') / 1024),
+                Rule::dimensions()->maxWidth($edge)->maxHeight($edge),
+            ],
+        ], [
+            'photo.required' => 'Choose a photo.',
+            'photo.image' => 'That file is not a photo.',
+            'photo.mimetypes' => 'Use a JPG, PNG or WebP photo.',
+            'photo.max' => 'That photo is too large. Keep it under 5 MB.',
+            'photo.dimensions' => "Keep the photo under {$edge} pixels on each side.",
+        ]);
+
+        $file = $request->file('photo');
+        $extension = match ($file->getMimeType()) {
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => 'jpg',
+        };
+
+        $path = $file->storeAs("customer-photos/{$app}", Str::ulid()->toString().'.'.$extension, 'public');
+
+        abort_if($path === false, 500, 'We could not save that photo. Try again in a moment.');
+
+        $previous = $user->avatar_path;
+        $user->update(['avatar_path' => $path]);
+
+        if ($previous !== null) {
+            Storage::disk('public')->delete($previous);
+        }
+
+        return response()->json(['data' => ['user' => $user->profile()]]);
+    }
+
+    public function destroyPhoto(Request $request, string $app): JsonResponse
+    {
+        $this->appOrFail($app);
+
+        $user = AppSession::user($request, $app);
+
+        abort_if($user === null, 401, 'Sign in again.');
+
+        if ($user->avatar_path !== null) {
+            Storage::disk('public')->delete($user->avatar_path);
+            $user->update(['avatar_path' => null]);
+        }
+
+        return response()->json(['data' => ['user' => $user->profile()]]);
+    }
+
+    /**
      * Deletes the account for good, at once. No password is asked for:
      * someone who has forgotten theirs is still signed in, and must not be
      * left holding an account they cannot close.
@@ -262,8 +366,12 @@ class AppUserController extends Controller
 
         abort_if($user === null, 401, 'Sign in again.');
 
-        // The row and nothing else. Its tokens go with it by foreign key,
-        // and its orders stay with the shop with the name taken off.
+        // The row and the photo. Its tokens go with it by foreign key, and
+        // its orders stay with the shop with the name taken off.
+        if ($user->avatar_path !== null) {
+            Storage::disk('public')->delete($user->avatar_path);
+        }
+
         $user->delete();
 
         return response()->json(null, 204);
