@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'slug', 'closing_at', 'closing_by'])]
+#[Fillable(['name', 'slug', 'palettes', 'closing_at', 'closing_by'])]
 class Organization extends Model
 {
     use HasFactory, HasPrefixedUlid;
@@ -31,6 +31,7 @@ class Organization extends Model
     {
         return [
             'closing_at' => 'datetime',
+            'palettes' => 'array',
         ];
     }
 

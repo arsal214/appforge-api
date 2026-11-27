@@ -77,6 +77,25 @@ class BusinessProfileValidator
         $this->optionalText($data, 'tagline', 'data', Contract::limit('maxShortText'));
         $this->optionalText($data, 'about', 'data', Contract::limit('maxText'));
         $this->optionalText($data, 'currencySymbol', 'data', 8);
+        $this->optionalText($data, 'taxLabel', 'data', Contract::limit('maxLabel'));
+
+        // The same rules an app's own money settings are held to, because
+        // these become exactly those settings.
+        if (array_key_exists('taxRate', $data) && $data['taxRate'] !== null) {
+            $rate = $data['taxRate'];
+            if ((! is_int($rate) && ! is_float($rate)) || $rate < 0 || $rate > Contract::limit('maxTaxRate')) {
+                $this->add('data.taxRate', 'Enter a percentage between 0 and '.Contract::limit('maxTaxRate').'.');
+            }
+        }
+
+        if (array_key_exists('taxIncluded', $data) && $data['taxIncluded'] !== null && ! is_bool($data['taxIncluded'])) {
+            $this->add('data.taxIncluded', 'Expected true or false.');
+        }
+
+        if (array_key_exists('taxOn', $data) && $data['taxOn'] !== null
+            && ! in_array($data['taxOn'], Contract::vocabulary('taxOnModes'), true)) {
+            $this->add('data.taxOn', 'Choose the whole order or chosen products.');
+        }
 
         foreach (['phone', 'whatsapp'] as $key) {
             if (! array_key_exists($key, $data) || $data[$key] === null || $data[$key] === '') {
@@ -211,6 +230,10 @@ class BusinessProfileValidator
                 $this->optionalText($entry, 'description', $entryPath, Contract::limit('maxText'));
                 $this->optionalText($entry, 'price', $entryPath, Contract::limit('maxLabel'));
                 $this->optionalUrl($entry, 'imageUrl', $entryPath);
+
+                if (array_key_exists('taxed', $entry) && ! is_bool($entry['taxed'])) {
+                    $this->add("{$entryPath}.taxed", 'Expected true or false.');
+                }
 
                 if (array_key_exists('popular', $entry) && ! is_bool($entry['popular'])) {
                     $this->add("{$entryPath}.popular", 'Expected true or false.');

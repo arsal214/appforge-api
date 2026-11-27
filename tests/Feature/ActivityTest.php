@@ -436,6 +436,10 @@ class ActivityTest extends TestCase
             // that is recorded.
             'PUT apps/{app}/config',
 
+            // A palette saved for later changes no app; applying one is a
+            // draft change like any other.
+            'PUT palettes',
+
             // The shop's own customers making and using an account in the
             // app. The history is what the team did to the business, and
             // none of the team did this.
@@ -445,6 +449,9 @@ class ActivityTest extends TestCase
             'POST public/apps/{app}/password-resets/confirm',
             'DELETE public/apps/{app}/sessions/current',
             'DELETE public/apps/{app}/me',
+            'PATCH public/apps/{app}/me',
+            'POST public/apps/{app}/me/photo',
+            'DELETE public/apps/{app}/me/photo',
         ];
 
         $routes = file_get_contents(base_path('routes/api.php'));

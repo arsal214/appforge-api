@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\DeviceController;
 use App\Http\Controllers\Api\EventController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OrganizationController;
+use App\Http\Controllers\Api\PaletteController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PublicConfigController;
 use App\Http\Controllers\Api\PushCampaignController;
@@ -63,6 +64,9 @@ Route::middleware('throttle:public-accounts')->group(function () {
     Route::post('public/apps/{app}/password-resets', [AppUserController::class, 'forgot']);
     Route::post('public/apps/{app}/password-resets/confirm', [AppUserController::class, 'reset']);
     Route::get('public/apps/{app}/me', [AppUserController::class, 'me']);
+    Route::patch('public/apps/{app}/me', [AppUserController::class, 'update']);
+    Route::post('public/apps/{app}/me/photo', [AppUserController::class, 'storePhoto']);
+    Route::delete('public/apps/{app}/me/photo', [AppUserController::class, 'destroyPhoto']);
     Route::delete('public/apps/{app}/me', [AppUserController::class, 'destroy']);
     Route::get('public/apps/{app}/me/orders', [AppUserController::class, 'orders']);
     Route::delete('public/apps/{app}/sessions/current', [AppUserController::class, 'logout']);
@@ -85,6 +89,8 @@ Route::middleware(['auth:sanctum', 'throttle:panel'])->group(function () {
     Route::delete('apps/{app}/permanently', [AppController::class, 'forceDestroy'])->middleware('allow:build');
 
     Route::get('apps/{app}/config', [AppConfigController::class, 'show']);
+    Route::get('palettes', [PaletteController::class, 'index']);
+    Route::put('palettes', [PaletteController::class, 'update'])->middleware('allow:build');
     Route::put('apps/{app}/config', [AppConfigController::class, 'update'])->middleware('allow:build');
 
     Route::get('apps/{app}/versions', [AppVersionController::class, 'index']);

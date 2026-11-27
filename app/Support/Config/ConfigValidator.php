@@ -76,6 +76,10 @@ class ConfigValidator
             $this->validateMoney($config['money'], 'money');
         }
 
+        if (array_key_exists('splash', $config) && $config['splash'] !== null) {
+            $this->validateSplash($config['splash'], 'splash');
+        }
+
         $screenIds = $this->validateScreens($config['screens'] ?? null);
         $this->validateTabs($config['tabs'] ?? null, $screenIds);
 
@@ -167,6 +171,32 @@ class ConfigValidator
         $this->optionalText($maintenance, 'message', $path, Contract::limit('maxText'));
     }
 
+    /** The screen a customer sees while the app gets ready. */
+    private function validateSplash(mixed $splash, string $path): void
+    {
+        if (! $this->isMap($splash)) {
+            $this->add($path, 'Expected an object.');
+
+            return;
+        }
+
+        $this->allowOnly($splash, $path, Contract::fields('splash'));
+        $this->requireBool($splash['enabled'] ?? null, "{$path}.enabled");
+        $this->optionalUrl($splash, 'logoUrl', $path);
+        $this->optionalColor($splash, 'backgroundColor', $path);
+
+        foreach (['showName', 'showLoader'] as $flag) {
+            if (array_key_exists($flag, $splash) && $splash[$flag] !== null) {
+                $this->requireBool($splash[$flag], "{$path}.{$flag}");
+            }
+        }
+
+        $this->optionalWholeNumber(
+            $splash, 'seconds', $path,
+            Contract::limit('minSplashSeconds'), Contract::limit('maxSplashSeconds'),
+        );
+    }
+
     /** How the app writes prices and what tax its basket adds. */
     private function validateMoney(mixed $money, string $path): void
     {
@@ -182,6 +212,11 @@ class ConfigValidator
 
         if (array_key_exists('taxIncluded', $money) && $money['taxIncluded'] !== null) {
             $this->requireBool($money['taxIncluded'], "{$path}.taxIncluded");
+        }
+
+        if (array_key_exists('taxOn', $money) && $money['taxOn'] !== null
+            && ! in_array($money['taxOn'], Contract::vocabulary('taxOnModes'), true)) {
+            $this->add("{$path}.taxOn", 'Expected one of: '.implode(', ', Contract::vocabulary('taxOnModes')).'.');
         }
 
         if (array_key_exists('taxRate', $money) && $money['taxRate'] !== null) {
@@ -445,6 +480,12 @@ class ConfigValidator
             $this->validateSectionStyle($section['style'], "{$path}.style");
         }
 
+        if (array_key_exists('visibleTo', $section)
+            && ! in_array($section['visibleTo'], Contract::vocabulary('audiences'), true)
+        ) {
+            $this->add("{$path}.visibleTo", 'Expected everyone, signedIn or signedOut.');
+        }
+
         $props = $section['props'] ?? null;
         if (! $this->isMap($props)) {
             $this->add("{$path}.props", 'Expected an object.');
@@ -599,6 +640,7 @@ class ConfigValidator
             'marquee' => $this->marqueeProps($props, $path),
             'video' => $this->videoProps($props, $path),
             'rich_text' => $this->richTextProps($props, $path),
+            'profile' => $this->profileProps($props, $path),
             'button_row' => $this->buttonRowProps($props, $path),
             'opening_hours' => $this->openingHoursProps($props, $path),
             'loyalty_card' => $this->loyaltyCardProps($props, $path),
@@ -934,6 +976,24 @@ class ConfigValidator
         }
     }
 
+    /**
+     * The signed-in customer's own details. Only what the owner offers is
+     * here; the customer's details never are.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function profileProps(array $p, string $path): void
+    {
+        $this->allowOnly($p, $path, Contract::fields('sectionProps.profile'));
+        $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
+
+        foreach (['askPhone', 'allowPhoto'] as $flag) {
+            if (array_key_exists($flag, $p) && $p[$flag] !== null) {
+                $this->requireBool($p[$flag], "{$path}.{$flag}");
+            }
+        }
+    }
+
     /** @param array<string, mixed> $p */
     private function buttonRowProps(array $p, string $path): void
     {
@@ -1064,6 +1124,10 @@ class ConfigValidator
     private function bookingCtaProps(array $p, string $path): void
     {
         $this->allowOnly($p, $path, Contract::fields('sectionProps.booking_cta'));
+
+        if (array_key_exists('signInToSend', $p) && $p['signInToSend'] !== null) {
+            $this->requireBool($p['signInToSend'], "{$path}.signInToSend");
+        }
         $this->requireText($p['title'] ?? null, "{$path}.title", Contract::limit('maxShortText'));
         $this->optionalText($p, 'body', $path, Contract::limit('maxText'));
         $this->requireText($p['ctaLabel'] ?? null, "{$path}.ctaLabel", 40);
@@ -1135,6 +1199,10 @@ class ConfigValidator
     private function detailsProps(array $p, string $path): void
     {
         $this->allowOnly($p, $path, Contract::fields('sectionProps.details'));
+
+        if (array_key_exists('signInToSend', $p) && $p['signInToSend'] !== null) {
+            $this->requireBool($p['signInToSend'], "{$path}.signInToSend");
+        }
         $this->optionalText($p, 'title', $path, Contract::limit('maxShortText'));
         $this->optionalText($p, 'note', $path, Contract::limit('maxText'));
         $this->optionalText($p, 'ctaLabel', $path, Contract::limit('maxLabel'));
@@ -1334,6 +1402,28 @@ class ConfigValidator
             $this->requireId($photo['id'] ?? null, "{$photoPath}.id");
             $this->requireUrl($photo['imageUrl'] ?? null, "{$photoPath}.imageUrl");
             $this->optionalText($photo, 'caption', $photoPath, Contract::limit('maxShortText'));
+
+            if (array_key_exists('itemId', $photo) && $photo['itemId'] !== null) {
+                $this->requireId($photo['itemId'], "{$photoPath}.itemId");
+            }
+        }
+
+        if (array_key_exists('showButtons', $p) && $p['showButtons'] !== null) {
+            $this->requireBool($p['showButtons'], "{$path}.showButtons");
+        }
+
+        if (array_key_exists('buttonAction', $p)
+            && ! in_array($p['buttonAction'], Contract::vocabulary('carouselButtonActions'), true)
+        ) {
+            $this->add("{$path}.buttonAction", 'Expected view or order.');
+        }
+
+        $this->optionalText($p, 'buttonLabel', $path, Contract::limit('maxLabel'));
+
+        // Whether the page exists is checked with every other destination,
+        // once all the screens are known.
+        if (array_key_exists('itemScreen', $p) && $p['itemScreen'] !== null) {
+            $this->requireId($p['itemScreen'], "{$path}.itemScreen");
         }
     }
 
@@ -1474,6 +1564,35 @@ class ConfigValidator
 
         if (array_key_exists('handovers', $p)) {
             $this->validateHandovers($p['handovers'], "{$path}.handovers");
+        }
+
+        $this->optionalText($p, 'deliveryNote', $path, Contract::limit('maxText'));
+        $this->optionalText($p, 'pickupNote', $path, Contract::limit('maxText'));
+
+        if (array_key_exists('locations', $p) && $p['locations'] !== null) {
+            $this->pickupLocations($p['locations'], "{$path}.locations");
+        }
+    }
+
+    /** Where a customer can collect an order: a name, an address, a number. */
+    private function pickupLocations(mixed $value, string $path): void
+    {
+        $locations = $this->boundedList($value, $path, Contract::limit('maxPickupLocations'), allowEmpty: true);
+
+        foreach ($locations ?? [] as $index => $location) {
+            $at = "{$path}.{$index}";
+
+            if (! $this->isMap($location)) {
+                $this->add($at, 'Expected an object.');
+
+                continue;
+            }
+
+            $this->allowOnly($location, $at, Contract::fields('pickupLocation'));
+            $this->requireId($location['id'] ?? null, "{$at}.id");
+            $this->requireText($location['name'] ?? null, "{$at}.name", Contract::limit('maxShortText'));
+            $this->requireText($location['address'] ?? null, "{$at}.address", Contract::limit('maxShortText'));
+            $this->optionalPhone($location, 'phone', $at);
         }
     }
 
@@ -1820,6 +1939,10 @@ class ConfigValidator
                 $this->optionalAction($item, 'action', $itemPath);
                 $this->optionalItemOptions($item, $itemPath);
                 $this->optionalSale($item, $itemPath);
+
+                if (array_key_exists('taxed', $item) && $item['taxed'] !== null) {
+                    $this->requireBool($item['taxed'], "{$itemPath}.taxed");
+                }
             }
 
             return;

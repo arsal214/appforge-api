@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\App;
+use App\Models\AppConfig;
 use App\Models\BusinessProfile;
 use App\Models\Organization;
 use App\Models\User;
@@ -603,5 +604,145 @@ class BusinessProfileTest extends TestCase
             ]))
             ->assertStatus(422)
             ->assertJsonValidationErrors('data.socialLinks.0.platform');
+    }
+
+    #[Test]
+    public function a_new_currency_reaches_every_app_made_from_the_business(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/profiles', $this->payload(['currencySymbol' => '£']))->assertCreated();
+        $profileId = $this->onlyProfileId();
+
+        $draft = fn (array $money = []) => [
+            'screens' => [['id' => 'scr_home', 'title' => 'Home', 'sections' => []]],
+            ...($money === [] ? [] : ['money' => $money]),
+        ];
+
+        $linked = App::factory()->create(['organization_id' => $user->organization_id, 'business_profile_id' => $profileId]);
+        $other = App::factory()->create(['organization_id' => $user->organization_id]);
+        AppConfig::create(['app_id' => $linked->id, 'schema_version' => 1, 'config' => $draft(['currencySymbol' => '£', 'taxRate' => 20])]);
+        AppConfig::create(['app_id' => $other->id, 'schema_version' => 1, 'config' => $draft(['currencySymbol' => '£'])]);
+
+        $this->actingAs($user)
+            ->putJson("/api/profiles/{$profileId}", $this->payload(['currencySymbol' => 'Rs']))
+            ->assertOk();
+
+        // Equal rather than same: MySQL keeps a JSON object's keys in its own order.
+        $this->assertEquals(
+            ['currencySymbol' => 'Rs', 'taxRate' => 20],
+            $linked->config()->first()->config['money'],
+            'the linked app takes the new symbol and keeps its tax',
+        );
+        $this->assertSame('£', $other->config()->first()->config['money']['currencySymbol'], 'an unlinked app is left alone');
+
+        // Taken away, the symbol goes from the app too.
+        $this->actingAs($user)->putJson("/api/profiles/{$profileId}", $this->payload())->assertOk();
+        $this->assertSame(['taxRate' => 20], $linked->config()->first()->config['money']);
+    }
+
+    #[Test]
+    public function a_currency_chosen_in_one_app_reaches_its_business_and_the_other_apps(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/profiles', $this->payload(['currencySymbol' => '£']))->assertCreated();
+        $profileId = $this->onlyProfileId();
+
+        $draft = fn (string $symbol) => [
+            'schemaVersion' => 1,
+            'minShellVersion' => '1.0.0',
+            'app' => ['name' => 'Sams Pizza', 'slug' => 'sams-pizza'],
+            'theme' => [
+                'accentColor' => '#0f766e',
+                'backgroundColor' => '#ffffff',
+                'surfaceColor' => '#f8fafc',
+                'textColor' => '#0f172a',
+                'mutedTextColor' => '#64748b',
+                'borderColor' => '#e2e8f0',
+                'cornerRadius' => 12,
+            ],
+            'tabs' => [['id' => 'tab_home', 'label' => 'Home', 'icon' => 'home', 'screenId' => 'scr_home']],
+            'screens' => [['id' => 'scr_home', 'title' => 'Home', 'sections' => [
+                ['id' => 'sec_hero', 'type' => 'hero', 'props' => ['title' => 'Fresh pizza, fast']],
+            ]]],
+            'money' => ['currencySymbol' => $symbol],
+        ];
+
+        $editing = App::factory()->create(['organization_id' => $user->organization_id, 'business_profile_id' => $profileId]);
+        $sibling = App::factory()->create(['organization_id' => $user->organization_id, 'business_profile_id' => $profileId]);
+        AppConfig::create(['app_id' => $sibling->id, 'schema_version' => 1, 'config' => $draft('£')]);
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$editing->id}/config", ['config' => $draft('€')])
+            ->assertOk();
+
+        $this->assertSame('€', BusinessProfile::find($profileId)->data['currencySymbol'], 'the business takes it');
+        $this->assertSame('€', $sibling->config()->first()->config['money']['currencySymbol'], 'and so does its other app');
+
+        // Tax set in the app's settings reaches the business the same way,
+        // and switching back to the whole order clears it there too.
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$editing->id}/config", ['config' => [...$draft('€'), 'money' => [
+                'currencySymbol' => '€', 'taxRate' => 18, 'taxLabel' => 'GST', 'taxOn' => 'products', 'taxIncluded' => true,
+            ]]])
+            ->assertOk();
+
+        $business = BusinessProfile::find($profileId)->data;
+        $this->assertSame([18, 'GST', 'products', true], [$business['taxRate'], $business['taxLabel'], $business['taxOn'], $business['taxIncluded']]);
+        $this->assertSame('products', $sibling->config()->first()->config['money']['taxOn'], 'the other app follows');
+
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$editing->id}/config", ['config' => [...$draft('€'), 'money' => [
+                'currencySymbol' => '€', 'taxRate' => 18, 'taxLabel' => 'GST', 'taxIncluded' => true,
+            ]]])
+            ->assertOk();
+        $this->assertArrayNotHasKey('taxOn', BusinessProfile::find($profileId)->data);
+
+        // The app that saved is not written to a second time, so its next
+        // save, carrying the time it was given, is not refused as a conflict.
+        $saved = $this->actingAs($user)->getJson("/api/apps/{$editing->id}/config")->json('data.updatedAt');
+        $this->actingAs($user)
+            ->putJson("/api/apps/{$editing->id}/config", ['config' => $draft('€'), 'expectedUpdatedAt' => $saved])
+            ->assertOk();
+    }
+
+    #[Test]
+    public function tax_set_on_the_business_reaches_its_apps_and_comes_back_from_them(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)->postJson('/api/profiles', $this->payload())->assertCreated();
+        $profileId = $this->onlyProfileId();
+
+        $app = App::factory()->create(['organization_id' => $user->organization_id, 'business_profile_id' => $profileId]);
+        AppConfig::create(['app_id' => $app->id, 'schema_version' => 1, 'config' => [
+            'screens' => [['id' => 'scr_home', 'title' => 'Home', 'sections' => []]],
+        ]]);
+
+        $this->actingAs($user)
+            ->putJson("/api/profiles/{$profileId}", $this->payload([
+                'currencySymbol' => 'Rs',
+                'taxRate' => 18,
+                'taxLabel' => 'GST',
+                'taxOn' => 'products',
+                'menuGroups' => [['id' => 'grp_1', 'name' => 'Tea', 'entries' => [
+                    ['id' => 'ent_1', 'title' => 'Chai', 'price' => '120', 'taxed' => true],
+                ]]],
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.data.menuGroups.0.entries.0.taxed', true);
+
+        $this->assertEquals(
+            ['currencySymbol' => 'Rs', 'taxRate' => 18, 'taxLabel' => 'GST', 'taxOn' => 'products'],
+            $app->config()->first()->config['money'],
+        );
+
+        $this->actingAs($user)
+            ->putJson("/api/profiles/{$profileId}", $this->payload(['taxOn' => 'everything']))
+            ->assertJsonValidationErrors('data.taxOn');
+        $this->actingAs($user)
+            ->putJson("/api/profiles/{$profileId}", $this->payload(['taxRate' => '18']))
+            ->assertJsonValidationErrors('data.taxRate');
     }
 }
